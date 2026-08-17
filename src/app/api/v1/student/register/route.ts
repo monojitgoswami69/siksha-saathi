@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/server/db';
-import { hashPassword, createAccessToken } from '@/lib/server/auth';
+import { hashPassword, createAccessToken, STUDENT_COOKIE_NAME, getCookieOptions } from '@/lib/server/auth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -51,7 +51,7 @@ export async function POST(req: NextRequest) {
       displayName: student.display_name,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       uid: student.id,
       email: student.email,
       role: 'student',
@@ -63,6 +63,9 @@ export async function POST(req: NextRequest) {
         roll: student.roll,
       },
     });
+
+    response.cookies.set(STUDENT_COOKIE_NAME, token, getCookieOptions());
+    return response;
   } catch (err: any) {
     console.error('Student registration error:', err);
     return NextResponse.json({ detail: err.message || 'Registration error' }, { status: 500 });

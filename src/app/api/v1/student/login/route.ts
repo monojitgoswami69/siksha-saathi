@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/server/db';
-import { verifyPassword, createAccessToken } from '@/lib/server/auth';
+import { verifyPassword, createAccessToken, STUDENT_COOKIE_NAME, getCookieOptions } from '@/lib/server/auth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,7 +23,7 @@ export async function POST(req: NextRequest) {
     const student = res.rows[0];
     if (!student.password_hash) {
       return NextResponse.json(
-        { detail: 'This account was created with Google. Please use Continue with Google.' },
+        { detail: 'Account created with Google Sign-In. Please log in using Google.' },
         { status: 400 }
       );
     }
@@ -41,7 +41,7 @@ export async function POST(req: NextRequest) {
       displayName: student.display_name,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       uid: student.id,
       email: student.email,
       role: 'student',
@@ -56,6 +56,9 @@ export async function POST(req: NextRequest) {
         avatar_url: student.avatar_url,
       },
     });
+
+    response.cookies.set(STUDENT_COOKIE_NAME, token, getCookieOptions());
+    return response;
   } catch (err: any) {
     console.error('Student login error:', err);
     return NextResponse.json({ detail: err.message || 'Authentication error' }, { status: 500 });

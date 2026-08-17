@@ -7,15 +7,20 @@ import { DocumentInfo } from '@/types';
 interface FilePreviewProps {
   document: DocumentInfo | null;
   previewUrl: string | null;
+  initialPage?: number;
   onClose: () => void;
   onDownload?: () => void;
 }
 
-export function FilePreview({ document, previewUrl, onClose, onDownload }: FilePreviewProps) {
+export function FilePreview({ document, previewUrl, initialPage, onClose, onDownload }: FilePreviewProps) {
   if (!document) return null;
 
   const isPdf = document.source?.toLowerCase().endsWith('.pdf') || document.mime_type?.includes('pdf');
   const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(document.source) || document.mime_type?.includes('image');
+
+  const pdfUrlWithPage = previewUrl
+    ? `${previewUrl}${initialPage ? `#page=${initialPage}` : '#toolbar=0'}`
+    : '';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm animate-in fade-in duration-200">
@@ -70,7 +75,7 @@ export function FilePreview({ document, previewUrl, onClose, onDownload }: FileP
           {previewUrl ? (
             isPdf ? (
               <iframe
-                src={`${previewUrl}#toolbar=0`}
+                src={pdfUrlWithPage}
                 className="w-full h-full rounded-xl border border-slate-200 bg-white"
                 title="PDF Preview"
               />

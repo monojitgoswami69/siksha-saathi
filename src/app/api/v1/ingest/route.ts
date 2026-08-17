@@ -1,13 +1,152 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, requireRole } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
-import { extractDocumentContent, chunkExtractedDocument } from '@/lib/server/documentProcessor';
+import { extractDocumentContent, chunkExtractedDocument, ExtractionResult } from '@/lib/server/documentProcessor';
 import { getBatchEmbeddings, formatVector } from '@/lib/server/embeddings';
 import { uploadStorageFile } from '@/lib/server/storage';
 import { logAudit } from '@/lib/server/audit';
+import { invalidateFilterCache } from '@/app/api/v1/filters/route';
+
+/**
+ * Background async worker to process document extraction, chunking, and embedding
+ */
+async function processDocumentInBackground({
+  docId,
+  fileBuffer,
+  rawContent,
+  mimeType,
+  source,
+  title,
+  stream,
+  semester,
+  subject,
+  module,
+  user,
+}: {
+  docId: string;
+  fileBuffer: Buffer | null;
+  rawContent: string;
+  mimeType: string;
+  source: string;
+  title: string;
+  stream: string;
+  semester: string;
+  subject: string;
+  module: string;
+  user: { uid: string; email: string; role: string };
+}) {
+  try {
+    // 1. Text extraction (30% progress)
+    await query('UPDATE documents SET processing_progress = 30 WHERE id = $1;', [docId]);
+
+    let extraction: ExtractionResult;
+
+    if (fileBuffer && fileBuffer.length > 0) {
+      extraction = await extractDocumentContent(source, fileBuffer, mimeType);
+    } else {
+      extraction = {
+        fullText: rawContent,
+        pages: [{ pageNumber: 1, text: rawContent }],
+      };
+    }
+
+    if (!extraction.fullText.trim()) {
+      throw new Error('No readable text content extracted from document.');
+    }
+
+    // 2. Semantic Chunking (60% progress)
+    await query('UPDATE documents SET processing_progress = 60 WHERE id = $1;', [docId]);
+
+    const chunks = chunkExtractedDocument({
+      extraction,
+      source,
+      title,
+      stream,
+      semester,
+      subject,
+      module,
+    });
+
+    if (chunks.length === 0) {
+      throw new Error('Failed to generate semantic text chunks.');
+    }
+
+    // 3. Batch Vector Embeddings (80% progress)
+    await query('UPDATE documents SET processing_progress = 80 WHERE id = $1;', [docId]);
+
+    const chunkTexts = chunks.map((c) => c.rawContent);
+    const embeddings = await getBatchEmbeddings(chunkTexts);
+
+    // 4. Batch insert into document_chunks
+    for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const embedding = embeddings[i];
+      const vectorStr = embedding && embedding.length > 0 ? formatVector(embedding) : null;
+
+      await query(
+        `INSERT INTO document_chunks (
+          document_id, chunk_index, total_chunks, raw_content,
+          page_start, page_end, source, title, stream, semester, subject, module, embedding
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::vector);`,
+        [
+          docId,
+          chunk.chunkIndex,
+          chunks.length,
+          chunk.rawContent,
+          chunk.pageStart || null,
+          chunk.pageEnd || null,
+          chunk.source,
+          chunk.title,
+          chunk.stream,
+          chunk.semester,
+          chunk.subject,
+          chunk.module,
+          vectorStr,
+        ]
+      );
+    }
+
+    // 5. Complete Indexing (100% progress)
+    await query(
+      `UPDATE documents 
+       SET status = 'ready', processing_progress = 100, total_chunks = $1, error_message = NULL 
+       WHERE id = $2;`,
+      [chunks.length, docId]
+    );
+
+    invalidateFilterCache();
+
+    await logAudit({
+      userId: user.uid,
+      userEmail: user.email,
+      role: user.role,
+      action: 'document.ingest.completed',
+      targetType: 'document',
+      details: { docId, title, chunks: chunks.length, stream, semester, subject },
+    });
+
+    console.log(`✅ [Async Ingest] Document "${title}" (${docId}) indexed successfully with ${chunks.length} chunks.`);
+  } catch (err: any) {
+    console.error(`❌ [Async Ingest] Failed for docId ${docId}:`, err);
+    await query(
+      `UPDATE documents 
+       SET status = 'failed', error_message = $1, processing_progress = 0 
+       WHERE id = $2;`,
+      [err.message || 'Background indexing failed', docId]
+    ).catch(() => {});
+
+    await logAudit({
+      userId: user.uid,
+      userEmail: user.email,
+      role: user.role,
+      action: 'document.ingest.failed',
+      targetType: 'document',
+      details: { docId, title, error: err.message },
+    }).catch(() => {});
+  }
+}
 
 export async function POST(req: NextRequest) {
-  const t0 = Date.now();
   try {
     const user = await getAuthUser(req);
     if (!user) {
@@ -65,181 +204,87 @@ export async function POST(req: NextRequest) {
     }
 
     if (!fileBuffer && !rawContent.trim()) {
-      return NextResponse.json({ detail: 'Provide either a file or text content' }, { status: 400 });
+      return NextResponse.json({ detail: 'File or content text is required' }, { status: 400 });
     }
 
-    // 1. Text Extraction
-    const extraction = fileBuffer
-      ? await extractDocumentContent(source, fileBuffer, mimeType)
-      : { fullText: rawContent, pages: [{ pageNumber: 1, text: rawContent }] };
-
-    if (!extraction.fullText.trim()) {
-      return NextResponse.json({ detail: 'No extractable text found in file' }, { status: 400 });
-    }
-
-    // 2. Upload file to Cloud Storage (Cloudflare R2 or Dropbox)
-    let storageProvider = 'r2';
-    let fileKey = '';
-    let previewUrl: string | null = null;
+    // 1. Upload original asset to Cloudflare R2 / Dropbox storage
+    let storageProvider = 'local';
+    let fileKey = null;
+    let previewUrl = null;
     let fileSize = fileBuffer ? fileBuffer.length : Buffer.byteLength(rawContent);
 
     if (fileBuffer) {
-      const uploadRes = await uploadStorageFile({
-        filename: source,
-        buffer: fileBuffer,
-        mimeType,
-      });
-      storageProvider = uploadRes.provider;
-      fileKey = uploadRes.fileKey;
-      previewUrl = uploadRes.publicUrl || null;
-      fileSize = uploadRes.size;
+      try {
+        const stored = await uploadStorageFile({
+          filename: source,
+          buffer: fileBuffer,
+          mimeType,
+          folder: 'course_materials',
+        });
+        storageProvider = stored.provider;
+        fileKey = stored.fileKey || null;
+        previewUrl = stored.publicUrl || null;
+      } catch (storageErr: any) {
+        console.warn('Storage upload note (proceeding with indexing):', storageErr.message);
+      }
     }
 
-    // 3. Chunking with page and metadata retention — read config from ENV
-    const chunkSize = parseInt(process.env.CHUNK_SIZE || '500', 10);
-    const chunkOverlap = parseInt(process.env.CHUNK_OVERLAP || '50', 10);
-
-    const chunks = chunkExtractedDocument({
-      extraction,
-      source,
-      title,
-      stream,
-      semester,
-      subject,
-      module,
-      chunkSize,
-      chunkOverlap,
-    });
-
-    if (chunks.length === 0) {
-      return NextResponse.json({ detail: 'Failed to split document into chunks' }, { status: 400 });
-    }
-
-    // 4. Generate Gemini Embeddings in batches
-    const chunkTexts = chunks.map((c) => c.rawContent);
-    const embeddings = await getBatchEmbeddings(chunkTexts);
-
-    // 5. Insert Document record in NeonDB
+    // 2. Insert initial document record with status = 'processing'
     const docRes = await query(
       `INSERT INTO documents (
-        title, source, mime_type, file_size_bytes, storage_provider, file_key, preview_url,
-        dropbox_path, dropbox_shared_link, stream, semester, subject, module, uploaded_by, uploader_email, total_chunks
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-      RETURNING id, created_at;`,
+        title, source, mime_type, file_size_bytes, storage_provider, file_key,
+        preview_url, stream, semester, subject,
+        module, uploaded_by, uploader_email, status, processing_progress, total_chunks
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'processing', 10, 0)
+      RETURNING id, title, source, status, processing_progress, preview_url;`,
       [
         title,
         source,
         mimeType,
         fileSize,
         storageProvider,
-        fileKey || null,
-        previewUrl || null,
-        fileKey || null,
-        previewUrl || null,
+        fileKey,
+        previewUrl,
         stream,
         semester,
         subject,
         module,
         user.uid,
         user.email,
-        chunks.length,
       ]
     );
 
-    const docId = docRes.rows[0].id;
+    const newDoc = docRes.rows[0];
 
-    // 6. Batch-insert all chunks in a single SQL statement (1 round trip instead of N)
-    if (chunks.length > 0) {
-      const BATCH_SIZE = 25; // Max chunks per INSERT to stay within postgres param limits
-      for (let batchStart = 0; batchStart < chunks.length; batchStart += BATCH_SIZE) {
-        const batchEnd = Math.min(batchStart + BATCH_SIZE, chunks.length);
-        const batchChunks = chunks.slice(batchStart, batchEnd);
-
-        const valuePlaceholders: string[] = [];
-        const batchParams: any[] = [];
-        let paramIdx = 1;
-
-        for (let i = 0; i < batchChunks.length; i++) {
-          const c = batchChunks[i];
-          const emb = embeddings[batchStart + i];
-          const vectorStr = emb ? formatVector(emb) : null;
-
-          valuePlaceholders.push(
-            `($${paramIdx}, $${paramIdx + 1}, $${paramIdx + 2}, $${paramIdx + 3}, $${paramIdx + 4}, $${paramIdx + 5}, $${paramIdx + 6}, $${paramIdx + 7}, $${paramIdx + 8}, $${paramIdx + 9}, $${paramIdx + 10}, $${paramIdx + 11}, $${paramIdx + 12})`
-          );
-          batchParams.push(
-            docId,
-            c.chunkIndex,
-            c.totalChunks,
-            c.rawContent,
-            c.pageStart,
-            c.pageEnd,
-            c.source,
-            c.title,
-            c.stream,
-            c.semester,
-            c.subject,
-            c.module,
-            vectorStr
-          );
-          paramIdx += 13;
-        }
-
-        await query(
-          `INSERT INTO document_chunks (
-            document_id, chunk_index, total_chunks, raw_content, page_start, page_end,
-            source, title, stream, semester, subject, module, embedding
-          ) VALUES ${valuePlaceholders.join(', ')};`,
-          batchParams
-        );
-      }
-    }
-
-    // 7. Audit log
-    await logAudit({
-      userId: user.uid,
-      userEmail: user.email,
-      role: user.role,
-      action: 'document.ingest',
-      targetType: 'document',
-      details: {
-        document_id: docId,
-        title,
-        source,
-        chunks: chunks.length,
-        size_bytes: fileSize,
-        stream,
-        semester,
-        subject,
-        module,
-        chunk_size: chunkSize,
-        chunk_overlap: chunkOverlap,
-      },
-    });
-
-    const elapsed = ((Date.now() - t0) / 1000).toFixed(2);
-
-    return NextResponse.json({
-      document_id: docId,
-      id: docId,
-      title,
+    // 3. Trigger asynchronous background processing worker
+    processDocumentInBackground({
+      docId: newDoc.id,
+      fileBuffer,
+      rawContent,
+      mimeType,
       source,
+      title,
       stream,
       semester,
       subject,
       module,
-      chunks_created: chunks.length,
-      total_chunks: chunks.length,
-      total_characters: extraction.fullText.length,
-      time_taken_seconds: parseFloat(elapsed),
-      storage_provider: storageProvider,
-      file_key: fileKey,
-      preview_url: previewUrl,
-      dropbox_shared_link: previewUrl,
-      message: `Successfully ingested "${title}" (${chunks.length} chunks) into ${storageProvider.toUpperCase()} storage in ${elapsed}s`,
-    });
+      user: { uid: user.uid, email: user.email, role: user.role },
+    }).catch((e) => console.error('Background ingestion launch error:', e));
+
+    // 4. Return immediate 202 Accepted response in <500ms
+    return NextResponse.json(
+      {
+        document_id: newDoc.id,
+        title: newDoc.title,
+        status: 'processing',
+        processing_progress: 10,
+        message: 'Document uploaded. Text extraction and vector indexing are running in background.',
+        preview_url: newDoc.preview_url,
+      },
+      { status: 202 }
+    );
   } catch (err: any) {
-    console.error('Document ingestion error:', err);
+    console.error('Ingest Endpoint Error:', err);
     return NextResponse.json({ detail: err.message || 'Ingestion failed' }, { status: 500 });
   }
 }

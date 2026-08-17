@@ -2,7 +2,7 @@
 
 import React, { useState, useRef, useEffect } from 'react';
 import { useStudentAuth } from '@/context/StudentAuthContext';
-import { ProfileModal } from './ProfileModal';
+import ProfileModal from '../profile/ProfileModal';
 
 interface TopAppBarProps {
   title?: string;

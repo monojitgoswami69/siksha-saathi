@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/server/db';
-import { verifyGoogleIdToken, createAccessToken } from '@/lib/server/auth';
+import { verifyGoogleIdToken, createAccessToken, STUDENT_COOKIE_NAME, getCookieOptions } from '@/lib/server/auth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -92,7 +92,7 @@ export async function POST(req: NextRequest) {
       displayName: student.display_name,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       uid: student.id,
       email: student.email,
       name: student.display_name || student.name,
@@ -103,8 +103,12 @@ export async function POST(req: NextRequest) {
       roll: student.roll_number,
       role: 'student',
       access_token: token,
+      token,
       token_type: 'bearer',
     });
+
+    response.cookies.set(STUDENT_COOKIE_NAME, token, getCookieOptions());
+    return response;
   } catch (err: any) {
     console.error('Google login route error:', err);
     return NextResponse.json({ detail: err.message || 'Google login failed' }, { status: 500 });

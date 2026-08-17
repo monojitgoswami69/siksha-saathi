@@ -25,6 +25,18 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   const [saving, setSaving] = useState(false);
 
+  React.useEffect(() => {
+    if (isOpen) {
+      setFormData({
+        name: profile?.name || user?.displayName || '',
+        roll: profile?.roll || '',
+        stream: profile?.stream || 'cse',
+        sem: profile?.sem || '1',
+        batch: profile?.batch || '2024-2028',
+      });
+    }
+  }, [isOpen, profile, user]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);

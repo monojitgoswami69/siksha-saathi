@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, requireRole } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
 import { logAudit } from '@/lib/server/audit';
+import { invalidateFilterCache } from '@/app/api/v1/filters/route';
 
 export async function POST(req: NextRequest) {
   try {
@@ -28,6 +29,8 @@ export async function POST(req: NextRequest) {
        DO UPDATE SET subjects = EXCLUDED.subjects, updated_at = NOW(), updated_by = EXCLUDED.updated_by;`,
       [stream.toLowerCase(), semester.toString(), JSON.stringify(subjects), user.uid]
     );
+
+    invalidateFilterCache();
 
     await logAudit({
       userId: user.uid,

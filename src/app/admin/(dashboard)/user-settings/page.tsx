@@ -3,6 +3,7 @@
 import React, { useState } from 'react';
 import { useAdminAuth } from '@/context/AdminAuthContext';
 import { useToast } from '@/context/ToastContext';
+import { api } from '@/lib/client/api';
 import { Shield, User, Mail, Building2, Lock, Save, KeyRound } from 'lucide-react';
 
 export default function UserSettingsPage() {
@@ -19,9 +20,27 @@ export default function UserSettingsPage() {
     e.preventDefault();
     setSaving(true);
     try {
-      showSuccess('Profile settings updated');
-    } catch {
-      showError('Failed to update settings');
+      const payload: any = {
+        displayName: displayName.trim(),
+        stream: stream.trim(),
+      };
+
+      if (newPassword) {
+        if (!currentPassword) {
+          showError('Current password is required to change your password');
+          setSaving(false);
+          return;
+        }
+        payload.currentPassword = currentPassword;
+        payload.newPassword = newPassword;
+      }
+
+      await api.auth.updateProfile(payload, 'admin');
+      showSuccess('Profile settings updated successfully');
+      setCurrentPassword('');
+      setNewPassword('');
+    } catch (err: any) {
+      showError(err.message || 'Failed to update settings');
     } finally {
       setSaving(false);
     }
@@ -42,7 +61,7 @@ export default function UserSettingsPage() {
             className="w-16 h-16 rounded-full border border-slate-700 bg-slate-800"
           />
           <div>
-            <h3 className="text-lg font-bold text-white">{user?.displayName || 'Administrator'}</h3>
+            <h3 className="text-lg font-bold text-white">{displayName || user?.displayName || 'Administrator'}</h3>
             <p className="text-xs text-slate-400">{user?.email}</p>
             <span className="inline-block px-2 py-0.5 mt-1.5 bg-indigo-950 text-indigo-300 text-[10px] font-bold rounded uppercase">
               Role: {user?.role || 'Admin'}
@@ -111,7 +130,7 @@ export default function UserSettingsPage() {
           <button
             type="submit"
             disabled={saving}
-            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40"
+            className="flex items-center gap-2 px-6 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40 cursor-pointer"
           >
             <Save className="w-4 h-4" />
             <span>{saving ? 'Saving...' : 'Update Settings'}</span>

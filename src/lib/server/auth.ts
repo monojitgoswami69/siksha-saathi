@@ -1,12 +1,11 @@
 /**
- * Authentication Service (JWT, Password Hashing & Google OAuth 2.0)
+ * Authentication Service (JWT, Password Hashing, Google OAuth 2.0 & Secure Cookies)
  */
 
 import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
 import { NextRequest } from 'next/server';
-import { query } from './db';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
@@ -15,6 +14,22 @@ if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
 const secretKey = new TextEncoder().encode(JWT_SECRET || 'siksha-saathi-dev-secret-key-change-in-production');
 const googleClient = new OAuth2Client(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
 const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
+
+export const STUDENT_COOKIE_NAME = 'siksha_student_session';
+export const ADMIN_COOKIE_NAME = 'siksha_admin_session';
+
+/**
+ * Returns standard secure cookie options
+ */
+export function getCookieOptions(maxAgeSeconds = 7 * 24 * 60 * 60) {
+  return {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === 'production',
+    sameSite: 'lax' as const,
+    path: '/',
+    maxAge: maxAgeSeconds,
+  };
+}
 
 export interface TokenPayload {
   uid: string;
@@ -96,16 +111,42 @@ export async function verifyGoogleIdToken(idToken: string): Promise<{
 }
 
 /**
- * Extract and verify current user from Request Authorization header
+ * Extract and verify current user from Request Cookies (preferred) or Authorization Header (fallback)
  */
 export async function getAuthUser(req: NextRequest): Promise<TokenPayload | null> {
-  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return null;
+  const path = req.nextUrl?.pathname || '';
+  const isAdminRoute = path.includes('/admin') || path.includes('/dashboard');
+
+  // 1. Check cookies first based on context
+  if (isAdminRoute) {
+    const adminToken = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
+    if (adminToken) {
+      const user = await verifyAccessToken(adminToken);
+      if (user) return user;
+    }
   }
 
-  const token = authHeader.split(' ')[1];
-  return verifyAccessToken(token);
+  const studentToken = req.cookies.get(STUDENT_COOKIE_NAME)?.value;
+  if (studentToken) {
+    const user = await verifyAccessToken(studentToken);
+    if (user) return user;
+  }
+
+  // Also check admin token if not on admin route
+  const adminToken = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
+  if (adminToken) {
+    const user = await verifyAccessToken(adminToken);
+    if (user) return user;
+  }
+
+  // 2. Fallback to Authorization Bearer header
+  const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
+  if (authHeader && authHeader.startsWith('Bearer ')) {
+    const token = authHeader.split(' ')[1];
+    return verifyAccessToken(token);
+  }
+
+  return null;
 }
 
 /**

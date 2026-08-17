@@ -1,13 +1,47 @@
 /**
- * Google Gemini LLM Service
+ * Google Gemini LLM Service with Exponential Backoff Resilience & Citation Support
  * Powers Socratic streaming RAG chat and structured JSON quiz generation.
- * All configurations and model choices are dynamically loaded from environment variables.
  */
 
 import { GoogleGenerativeAI, SchemaType } from '@google/generative-ai';
 
 const apiKey = process.env.GEMINI_API_KEY || '';
 const genAI = new GoogleGenerativeAI(apiKey);
+
+/**
+ * Exponential backoff retry utility with jitter for Gemini API calls
+ */
+export async function callWithRetry<T>(
+  fn: () => Promise<T>,
+  maxRetries = 3,
+  baseDelayMs = 750
+): Promise<T> {
+  let attempt = 0;
+  while (attempt < maxRetries) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      attempt++;
+      const isRateLimit =
+        err?.status === 429 ||
+        err?.message?.includes('429') ||
+        err?.message?.includes('RESOURCE_EXHAUSTED') ||
+        err?.status === 503 ||
+        err?.message?.includes('503');
+
+      if (!isRateLimit || attempt >= maxRetries) {
+        throw err;
+      }
+
+      // Exponential backoff with random jitter
+      const jitter = Math.random() * 200;
+      const delay = Math.pow(2, attempt) * baseDelayMs + jitter;
+      console.warn(`[Gemini RateLimit] Retry ${attempt}/${maxRetries} in ${Math.round(delay)}ms...`);
+      await new Promise((resolve) => setTimeout(resolve, delay));
+    }
+  }
+  throw new Error('Maximum Gemini API retry attempts exceeded');
+}
 
 export const SOCRATIC_SYSTEM_INSTRUCTION = `You are Siksha Saathi, an expert Socratic tutor for college students.
 
@@ -20,15 +54,15 @@ export const SOCRATIC_SYSTEM_INSTRUCTION = `You are Siksha Saathi, an expert Soc
      b) The student has already answered your guiding questions (acknowledge and reward effort).
      c) It is a purely factual syntax/definition lookup.
      d) The student expresses frustration or asks for clarification.
-3. **Teach Naturally.** Never mention "reference material", "context provided", or reveal your backend retrieval mechanics.
-4. **Formatting:** Use clean markdown, bolding, code blocks with syntax highlighting, and bullet points when explaining.
-5. **Conciseness:** Keep guiding questions crisp and targeted.`;
+3. **Teach Naturally.** Never say "according to the context provided" or reveal your backend retrieval mechanics.
+4. **Citations & References:** When referencing specific concepts, theorems, definitions, or equations found in the reference material, append a citation badge at the end of the paragraph using this exact syntax:
+   \`[[Source: "<Document Title>", Page: <page_number>, docId: "<doc_id>"]]\`
+   (e.g., \`[[Source: "Unit 1 - Data Structures.pdf", Page: 14, docId: "abc-123"]]\`).
+5. **Formatting:** Use clean markdown, bolding, code blocks with syntax highlighting, and bullet points when explaining.
+6. **Conciseness:** Keep guiding questions crisp and targeted.`;
 
 /**
- * Sanitizes conversation history for Gemini SDK requirements:
- * 1. History must start with role 'user' (strips leading 'model' turns).
- * 2. History must strictly alternate between 'user' and 'model'.
- * 3. The trailing message in history must be 'model' so the new userMessage continues the turn cleanly.
+ * Sanitizes conversation history for Gemini SDK requirements
  */
 function sanitizeHistory(
   conversationHistory: Array<{ role: 'user' | 'model' | 'assistant'; content: string }>
@@ -49,7 +83,6 @@ function sanitizeHistory(
     }
   }
 
-  // If the last message is 'user', remove it so that userMessage is passed cleanly to sendMessageStream
   if (sanitized.length > 0 && sanitized[sanitized.length - 1].role === 'user') {
     sanitized.pop();
   }
@@ -74,13 +107,13 @@ export async function streamSocraticChat({
     : `${SOCRATIC_SYSTEM_INSTRUCTION}\n\n## Reference Material\n(EMPTY - No relevant course content found. Refuse to answer outside course materials.)\n`;
 
   if (!apiKey || apiKey.startsWith('dummy')) {
-    const mockText = `Hello! I am Siksha Saathi tutor.\n\nRegarding your question about "${userMessage}":\n\nWhat is the fundamental principle behind this in your syllabus?`;
+    const mockText = `Hello! I am your Siksha Saathi Socratic tutor.\n\nRegarding your question about "${userMessage}":\n\nWhat is the fundamental principle behind this concept in your course syllabus? [[Source: "Introduction to Computer Science.pdf", Page: 1, docId: "demo-doc"]]`;
     return new ReadableStream({
       async start(controller) {
         const encoder = new TextEncoder();
         for (const word of mockText.split(' ')) {
           controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: word + ' ' })}\n\n`));
-          await new Promise((r) => setTimeout(r, 30));
+          await new Promise((r) => setTimeout(r, 25));
         }
         controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
         controller.close();
@@ -105,7 +138,7 @@ export async function streamSocraticChat({
       history: sanitizedHistory,
     });
 
-    const result = await chat.sendMessageStream(userMessage);
+    const result = await callWithRetry(() => chat.sendMessageStream(userMessage));
 
     const encoder = new TextEncoder();
     return new ReadableStream({
@@ -142,7 +175,7 @@ export interface QuizQuestionOutput {
 }
 
 /**
- * Generate structured MCQs from course materials
+ * Generate structured MCQs from course materials with retry resilience
  */
 export async function generateQuizQuestions({
   subject,
@@ -212,10 +245,11 @@ ${contextPayload}`;
     },
   });
 
-  const result = await model.generateContent(prompt);
-  const text = result.response.text();
-  const parsed = JSON.parse(text);
-  return parsed;
+  return callWithRetry(async () => {
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
+    return JSON.parse(text);
+  });
 }
 
 export const generateQuizStructured = generateQuizQuestions;

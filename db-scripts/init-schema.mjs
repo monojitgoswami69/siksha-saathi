@@ -142,6 +142,9 @@ async function initSchema() {
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_provider VARCHAR(50) DEFAULT 'r2';
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_key VARCHAR(500);
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS preview_url VARCHAR(1000);
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ready';
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS error_message TEXT;
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS processing_progress INT DEFAULT 0;
     `);
     console.log('   ✅ Table: documents');
 
@@ -266,6 +269,16 @@ async function initSchema() {
       console.log('   ✅ HNSW Vector Index: idx_chunks_embedding');
     } catch (e) {
       console.warn('   ⚠️ HNSW index creation note (requires pgvector):', e.message);
+    }
+
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_chunks_fts ON document_chunks 
+        USING gin (to_tsvector('english', raw_content));
+      `);
+      console.log('   ✅ Full-Text GIN Search Index: idx_chunks_fts');
+    } catch (e) {
+      console.warn('   ⚠️ GIN FTS index creation note:', e.message);
     }
 
     await client.query('COMMIT');

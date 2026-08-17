@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/server/db';
-import { verifyPassword, createAccessToken } from '@/lib/server/auth';
+import { verifyPassword, createAccessToken, ADMIN_COOKIE_NAME, getCookieOptions } from '@/lib/server/auth';
 
 export async function POST(req: NextRequest) {
   try {
@@ -36,7 +36,7 @@ export async function POST(req: NextRequest) {
       orgId: user.organization_name,
     });
 
-    return NextResponse.json({
+    const response = NextResponse.json({
       uid: user.id,
       email: user.email,
       role: user.role,
@@ -45,6 +45,9 @@ export async function POST(req: NextRequest) {
       stream: user.stream,
       token,
     });
+
+    response.cookies.set(ADMIN_COOKIE_NAME, token, getCookieOptions());
+    return response;
   } catch (err: any) {
     console.error('Admin login error:', err);
     return NextResponse.json({ detail: err.message || 'Login error' }, { status: 500 });

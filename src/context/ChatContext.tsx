@@ -206,9 +206,10 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         content: m.content,
       }));
 
-      const token = sessionStorage.getItem('student_token') || localStorage.getItem('student_token');
+      const token = typeof window !== 'undefined' ? sessionStorage.getItem('student_token') || localStorage.getItem('student_token') : null;
       const response = await fetch('/api/v1/query/stream', {
         method: 'POST',
+        credentials: 'same-origin',
         headers: {
           'Content-Type': 'application/json',
           ...(token ? { Authorization: `Bearer ${token}` } : {}),

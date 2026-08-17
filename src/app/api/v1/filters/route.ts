@@ -1,8 +1,25 @@
 import { NextResponse } from 'next/server';
 import { query } from '@/lib/server/db';
 
+let cachedFilters: any = null;
+let cacheExpiry = 0;
+const CACHE_TTL_MS = 60 * 1000; // 60 seconds
+
+export function invalidateFilterCache() {
+  cachedFilters = null;
+  cacheExpiry = 0;
+}
+
 export async function GET() {
   try {
+    const now = Date.now();
+    if (cachedFilters && now < cacheExpiry) {
+      return NextResponse.json(cachedFilters, {
+        headers: {
+          'X-Cache': 'HIT',
+        },
+      });
+    }
 
     // Parallel: fetch all filter data at once
     const [streamRes, semRes, subjRes, curricRes] = await Promise.all([
@@ -50,11 +67,20 @@ export async function GET() {
       ])
     ).sort();
 
-    return NextResponse.json({
+    const responseData = {
       streams,
       semesters,
       subjects: allSubjects,
       curriculum: curriculumMap,
+    };
+
+    cachedFilters = responseData;
+    cacheExpiry = now + CACHE_TTL_MS;
+
+    return NextResponse.json(responseData, {
+      headers: {
+        'X-Cache': 'MISS',
+      },
     });
   } catch (err: any) {
     return NextResponse.json({ detail: err.message }, { status: 500 });

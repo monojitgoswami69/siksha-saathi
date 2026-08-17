@@ -5,8 +5,6 @@ import { getEmbedding, formatVector } from '@/lib/server/embeddings';
 import { streamSocraticChat } from '@/lib/server/llm';
 import { logStudentQuery } from '@/lib/server/audit';
 
-const SIMILARITY_THRESHOLD = parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.3');
-
 export async function POST(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
@@ -20,18 +18,20 @@ export async function POST(req: NextRequest) {
       session_id,
       stream: reqStream,
       semester: reqSem,
-      subject: reqSubject,
       document_id: reqDocId,
+      subject: reqSubject,
       history = [],
+      top_k = 5,
     } = body;
 
-    if (!message || !message.trim()) {
-      return NextResponse.json({ detail: 'Message cannot be empty' }, { status: 400 });
+    if (!message || typeof message !== 'string') {
+      return NextResponse.json({ detail: 'Message string is required' }, { status: 400 });
     }
 
-    const topK = parseInt(process.env.RETRIEVAL_TOP_K || '5', 10);
+    const SIMILARITY_THRESHOLD = parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.25');
+    const topK = Math.min(Math.max(1, top_k), 10);
 
-    // Run query embedding and student profile lookup in PARALLEL
+    // Parallel embedding generation & student profile lookup
     const [queryEmbedding, studentRes] = await Promise.all([
       getEmbedding(message),
       query('SELECT stream, sem FROM student_users WHERE id = $1;', [user.uid]).catch(() => ({
@@ -40,7 +40,7 @@ export async function POST(req: NextRequest) {
       })),
     ]);
 
-    // Always resolve the student's stream/semester — request body overrides profile
+    // Resolve student stream & semester
     let studentStream = reqStream;
     let studentSem = reqSem;
     if (studentRes.rowCount && studentRes.rowCount > 0) {
@@ -50,59 +50,97 @@ export async function POST(req: NextRequest) {
     }
 
     const vectorStr = formatVector(queryEmbedding);
+    const cleanSearchText = message.replace(/[^\w\s]/gi, ' ').trim() || message;
 
-    // Build vector query with pgvector cosine distance + mandatory metadata filters
-    let vectorSql = `
-      SELECT id, document_id, chunk_index, total_chunks, raw_content,
-             page_start, page_end, source, title, stream, semester, subject, module,
-             1 - (embedding <=> $1) AS similarity
-      FROM document_chunks
-      WHERE embedding IS NOT NULL
-    `;
-    const params: any[] = [vectorStr];
-    let pIdx = 2;
+    // Hybrid Search: Vector Cosine + Full-Text Search via Reciprocal Rank Fusion (RRF)
+    let whereFilter = 'WHERE c.embedding IS NOT NULL';
+    const params: any[] = [vectorStr, cleanSearchText];
+    let pIdx = 3;
 
     if (reqDocId) {
-      // Scoped to a specific document
-      vectorSql += ` AND document_id = $${pIdx}`;
+      whereFilter += ` AND c.document_id = $${pIdx}`;
       params.push(reqDocId);
       pIdx++;
     } else {
-      // Mandatory stream/semester filters for data segregation
       if (studentStream && studentStream !== 'All') {
-        vectorSql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;
+        whereFilter += ` AND (c.stream = $${pIdx} OR c.stream = 'General' OR c.stream IS NULL)`;
         params.push(studentStream);
         pIdx++;
       }
       if (studentSem && studentSem !== 'All') {
-        vectorSql += ` AND (semester = $${pIdx} OR semester = 'General' OR semester IS NULL)`;
+        whereFilter += ` AND (c.semester = $${pIdx} OR c.semester = 'General' OR c.semester IS NULL)`;
         params.push(studentSem);
         pIdx++;
       }
       if (reqSubject && reqSubject !== 'All Subjects') {
-        vectorSql += ` AND (LOWER(subject) = LOWER($${pIdx}) OR subject = 'General' OR subject IS NULL)`;
+        whereFilter += ` AND (LOWER(c.subject) = LOWER($${pIdx}) OR c.subject = 'General' OR c.subject IS NULL)`;
         params.push(reqSubject);
         pIdx++;
       }
     }
 
-    vectorSql += ` ORDER BY embedding <=> $1 LIMIT $${pIdx};`;
+    const hybridSql = `
+      WITH vector_search AS (
+        SELECT 
+          c.id,
+          ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1) AS v_rank,
+          (1 - (c.embedding <=> $1)) AS v_sim
+        FROM document_chunks c
+        ${whereFilter}
+        LIMIT 25
+      ),
+      text_search AS (
+        SELECT 
+          c.id,
+          ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) DESC) AS t_rank,
+          ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) AS t_score
+        FROM document_chunks c
+        ${whereFilter} AND to_tsvector('english', c.raw_content) @@ plainto_tsquery('english', $2)
+        LIMIT 25
+      )
+      SELECT 
+        c.id, c.document_id, c.chunk_index, c.total_chunks, c.raw_content,
+        c.page_start, c.page_end, c.source, c.title, c.stream, c.semester, c.subject, c.module,
+        COALESCE(v.v_sim, 0) AS similarity,
+        COALESCE(t.t_score, 0) AS text_score,
+        (COALESCE(1.0 / (60 + v.v_rank), 0.0) + COALESCE(1.0 / (60 + t.t_rank), 0.0)) AS rrf_score
+      FROM document_chunks c
+      LEFT JOIN vector_search v ON c.id = v.id
+      LEFT JOIN text_search t ON c.id = t.id
+      WHERE v.id IS NOT NULL OR t.id IS NOT NULL
+      ORDER BY rrf_score DESC, similarity DESC
+      LIMIT $${pIdx};
+    `;
     params.push(topK);
 
     let searchResults: any[] = [];
     try {
-      const res = await query(vectorSql, params);
-      searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD);
+      const res = await query(hybridSql, params);
+      searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD || r.text_score > 0.05);
     } catch (e: any) {
-      console.error('Vector search error:', e.message);
-      // Safe fallback: empty context (LLM will refuse to answer)
-      searchResults = [];
+      console.warn('Hybrid search fallback to basic vector search:', e.message);
+      try {
+        const fallbackSql = `
+          SELECT id, document_id, chunk_index, total_chunks, raw_content,
+                 page_start, page_end, source, title, stream, semester, subject, module,
+                 1 - (embedding <=> $1) AS similarity
+          FROM document_chunks
+          WHERE embedding IS NOT NULL
+          ORDER BY embedding <=> $1 LIMIT 5;
+        `;
+        const res = await query(fallbackSql, [vectorStr]);
+        searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD);
+      } catch (err: any) {
+        console.error('Vector fallback search error:', err.message);
+        searchResults = [];
+      }
     }
 
-    // Format source metadata for each retrieved chunk
-    const sources = searchResults.map((chunk, i) => ({
+    // Format sources with document_id and page numbers
+    const sources = searchResults.map((chunk) => ({
       title: chunk.title || chunk.source,
       source: chunk.source,
+      document_id: chunk.document_id,
       subject: chunk.subject || 'General',
       module: chunk.module || undefined,
       page: chunk.page_start || undefined,
@@ -110,16 +148,16 @@ export async function POST(req: NextRequest) {
       similarity: parseFloat((chunk.similarity || 0).toFixed(3)),
     }));
 
-    // Format Reference Material for LLM context
+    // Format Reference Material with structured citation anchors
     const contextParts: string[] = [];
     searchResults.forEach((chunk, i) => {
       contextParts.push(
-        `--- Document ${i + 1}: ${chunk.title || chunk.source} (Page ${chunk.page_start || '?'}, Subject: ${chunk.subject || 'General'}) ---\n${chunk.raw_content}`
+        `--- Document ${i + 1}: "${chunk.title || chunk.source}" (docId: "${chunk.document_id}", Page: ${chunk.page_start || 1}, Subject: "${chunk.subject || 'General'}") ---\n${chunk.raw_content}`
       );
     });
     const contextBlock = contextParts.join('\n\n');
 
-    // Save user message and track analytics asynchronously without blocking stream start
+    // Save user chat message asynchronously
     if (session_id) {
       query(
         `INSERT INTO chat_messages (session_id, role, content)
@@ -138,70 +176,83 @@ export async function POST(req: NextRequest) {
       stream: topChunk?.stream || studentStream || 'General',
       semester: topChunk?.semester || studentSem || 'General',
       topChunkId: topChunk?.id,
-    });
+    }).catch(() => {});
 
-    // Stream Socratic response immediately
+    // Stream Socratic chat response
     const stream = await streamSocraticChat({
       userMessage: message,
       contextBlock,
       conversationHistory: history,
     });
 
-    // TransformStream collects response tokens, emits source metadata, and saves to DB upon completion
-    let fullResponseText = '';
+    const reader = stream.getReader();
     const encoder = new TextEncoder();
-    const transformStream = new TransformStream({
-      start(controller) {
-        // Emit source metadata as the first SSE event so frontend can display sources immediately
-        if (sources.length > 0) {
-          controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ sources })}\n\n`)
-          );
-        }
-      },
-      transform(chunk, controller) {
-        controller.enqueue(chunk);
+    const decoder = new TextDecoder();
+    let accumulatedResponse = '';
+
+    const customStream = new ReadableStream({
+      async start(controller) {
+        // Send initial metadata frame containing hybrid sources
+        controller.enqueue(
+          encoder.encode(`data: ${JSON.stringify({ sources, type: 'metadata' })}\n\n`)
+        );
+
         try {
-          const text = new TextDecoder().decode(chunk);
-          const lines = text.split('\n');
-          for (const line of lines) {
-            if (line.startsWith('data: ') && !line.includes('[DONE]')) {
-              try {
-                const data = JSON.parse(line.slice(6));
-                if (data.text) fullResponseText += data.text;
-              } catch {}
+          while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const textChunk = decoder.decode(value);
+            const lines = textChunk.split('\n');
+
+            for (const line of lines) {
+              if (line.startsWith('data: ')) {
+                const dataStr = line.slice(6).trim();
+                if (dataStr === '[DONE]') {
+                  controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+                } else {
+                  try {
+                    const parsed = JSON.parse(dataStr);
+                    if (parsed.text) {
+                      accumulatedResponse += parsed.text;
+                    }
+                  } catch {}
+                  controller.enqueue(encoder.encode(`${line}\n`));
+                }
+              }
             }
           }
-        } catch {}
-      },
-      async flush() {
-        if (session_id && fullResponseText.trim()) {
-          try {
-            await query(
+
+          // Persist assistant message in background
+          if (session_id && accumulatedResponse.trim()) {
+            query(
               `INSERT INTO chat_messages (session_id, role, content, sources)
                VALUES ($1, 'assistant', $2, $3);`,
-              [
-                session_id,
-                fullResponseText.trim(),
-                JSON.stringify(sources),
-              ]
-            );
-          } catch (e: any) {
-            console.error('Failed to save assistant message:', e.message);
+              [session_id, accumulatedResponse.trim(), JSON.stringify(sources)]
+            ).catch((e) => console.error('Failed to save assistant chat message:', e.message));
           }
+
+          controller.close();
+        } catch (streamErr: any) {
+          console.error('SSE Stream error:', streamErr);
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ error: streamErr.message || 'Streaming failed' })}\n\n`)
+          );
+          controller.close();
         }
       },
     });
 
-    return new Response(stream.pipeThrough(transformStream), {
+    return new Response(customStream, {
       headers: {
         'Content-Type': 'text/event-stream',
         'Cache-Control': 'no-cache, no-transform',
         Connection: 'keep-alive',
+        'X-Accel-Buffering': 'no',
       },
     });
   } catch (err: any) {
-    console.error('Streaming query error:', err);
-    return NextResponse.json({ detail: err.message || 'RAG stream error' }, { status: 500 });
+    console.error('Query Stream Endpoint Error:', err);
+    return NextResponse.json({ detail: err.message || 'Stream initialization error' }, { status: 500 });
   }
 }

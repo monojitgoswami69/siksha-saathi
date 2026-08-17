@@ -70,11 +70,14 @@ export const documents = pgTable('documents', {
   uploadedBy: uuid('uploaded_by'),
   uploaderEmail: varchar('uploader_email', { length: 255 }),
   totalChunks: integer('total_chunks').default(0),
+  status: varchar('status', { length: 50 }).default('ready'),
+  errorMessage: text('error_message'),
+  processingProgress: integer('processing_progress').default(0),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
 });
 
 /**
- * 4. Document Chunks (pgvector Vector Store)
+ * 4. Document Chunks (pgvector Vector Store + Full-Text Search)
  */
 export const documentChunks = pgTable(
   'document_chunks',
@@ -101,6 +104,7 @@ export const documentChunks = pgTable(
     index('idx_chunks_metadata').on(table.stream, table.semester, table.subject),
     index('idx_chunks_doc_id').on(table.documentId),
     index('idx_chunks_embedding').using('hnsw', table.embedding.op('vector_cosine_ops')),
+    index('idx_chunks_fts').using('gin', sql`to_tsvector('english', ${table.rawContent})`),
   ]
 );
 

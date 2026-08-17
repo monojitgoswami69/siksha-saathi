@@ -1,6 +1,6 @@
 /**
  * Universal Client API Service
- * Connects to Next.js API route handlers (/api/v1/...)
+ * Connects to Next.js API route handlers (/api/v1/...) with automatic secure cookie transport.
  */
 
 import { DocumentInfo, QuizResponse, QuizHistoryItem, UserProfile } from '@/types';
@@ -18,21 +18,17 @@ export class ApiError extends Error {
   }
 }
 
-function getToken(scope?: 'student' | 'admin'): string | null {
+function getFallbackToken(scope?: 'student' | 'admin'): string | null {
   if (typeof window === 'undefined') return null;
   if (scope === 'admin') {
     return (
       sessionStorage.getItem('admin_token') ||
-      localStorage.getItem('admin_token') ||
-      sessionStorage.getItem('student_token') ||
-      localStorage.getItem('student_token')
+      localStorage.getItem('admin_token')
     );
   }
   return (
     sessionStorage.getItem('student_token') ||
-    localStorage.getItem('student_token') ||
-    sessionStorage.getItem('admin_token') ||
-    localStorage.getItem('admin_token')
+    localStorage.getItem('student_token')
   );
 }
 
@@ -42,13 +38,14 @@ async function request<T = any>(
   scope?: 'student' | 'admin'
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
-  const token = getToken(scope);
+  const token = getFallbackToken(scope);
 
   const headers: Record<string, string> = {
     ...((options.headers as Record<string, string>) || {}),
   };
 
-  if (token) {
+  // Optional fallback token attachment (cookies are sent automatically)
+  if (token && !headers['Authorization']) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
@@ -58,6 +55,7 @@ async function request<T = any>(
 
   const res = await fetch(url, {
     ...options,
+    credentials: 'same-origin',
     headers,
   });
 
@@ -87,6 +85,16 @@ export const api = {
       request('/auth/me', { method: 'GET' }, scope),
     updateProfile: (data: any, scope: 'student' | 'admin' = 'student') =>
       request('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }, scope),
+    logout: (scope?: 'student' | 'admin') => {
+      const q = scope ? `?scope=${scope}` : '';
+      if (typeof window !== 'undefined') {
+        sessionStorage.removeItem(scope === 'admin' ? 'admin_token' : 'student_token');
+        sessionStorage.removeItem(scope === 'admin' ? 'admin_user_info' : 'student_user_info');
+        localStorage.removeItem(scope === 'admin' ? 'admin_token' : 'student_token');
+        localStorage.removeItem(scope === 'admin' ? 'admin_user_info' : 'student_user_info');
+      }
+      return request(`/auth/logout${q}`, { method: 'POST' });
+    },
   },
 
   sessions: {
@@ -139,12 +147,8 @@ export const api = {
     getDownloadUrl: (docId: string): Promise<{ download_url: string; title: string }> =>
       request(`/documents/${docId}/download`, { method: 'GET' }),
     download: async (docId: string, filename: string) => {
-      const token =
-        typeof window !== 'undefined'
-          ? sessionStorage.getItem('student_token') || sessionStorage.getItem('admin_token')
-          : null;
       const res = await fetch(`/api/v1/documents/${docId}/download`, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {},
+        credentials: 'same-origin',
       });
       const blob = await res.blob();
       const url = window.URL.createObjectURL(blob);

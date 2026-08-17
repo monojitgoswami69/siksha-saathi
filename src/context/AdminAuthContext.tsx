@@ -14,7 +14,7 @@ interface AdminAuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  logout: () => void;
+  logout: () => Promise<void>;
   isSuperuser: boolean;
   isAdmin: boolean;
   isFaculty: boolean;
@@ -22,41 +22,28 @@ interface AdminAuthContextValue {
 
 const AdminAuthContext = createContext<AdminAuthContextValue | null>(null);
 
-const TOKEN_KEY = 'admin_token';
-const USER_KEY = 'admin_user_info';
-
 export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<AdminUser | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
   const loadSession = useCallback(async () => {
     try {
-      const storedToken = sessionStorage.getItem(TOKEN_KEY) || localStorage.getItem(TOKEN_KEY);
-      const storedUser = sessionStorage.getItem(USER_KEY) || localStorage.getItem(USER_KEY);
-
-      if (storedToken && storedUser) {
-        const parsed = JSON.parse(storedUser);
-        setUser(parsed);
-
-        try {
-          const fresh = await api.auth.getMe('admin');
-          if (fresh && fresh.uid) {
-            setUser({
-              uid: fresh.uid,
-              email: fresh.email,
-              displayName: fresh.display_name,
-              role: fresh.role,
-              token: storedToken,
-              stream: fresh.stream,
-              organization_name: fresh.organization_name,
-            });
-          }
-        } catch {
-          logout();
-        }
+      const fresh = await api.auth.getMe('admin');
+      if (fresh && fresh.uid) {
+        setUser({
+          uid: fresh.uid,
+          email: fresh.email,
+          displayName: fresh.display_name,
+          role: fresh.role,
+          token: '',
+          stream: fresh.stream,
+          organization_name: fresh.organization_name,
+        });
+      } else {
+        setUser(null);
       }
-    } catch (e) {
-      console.error('Admin session restore error:', e);
+    } catch {
+      setUser(null);
     } finally {
       setIsLoading(false);
     }
@@ -74,29 +61,26 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         email: res.email,
         displayName: res.display_name,
         role: res.role,
-        token: res.token,
+        token: res.token || '',
         stream: res.stream,
         organization_name: res.organization_name,
       };
 
       setUser(adminData);
-      sessionStorage.setItem(TOKEN_KEY, res.token);
-      sessionStorage.setItem(USER_KEY, JSON.stringify(adminData));
-      localStorage.setItem(TOKEN_KEY, res.token);
-      localStorage.setItem(USER_KEY, JSON.stringify(adminData));
-
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Login failed' };
     }
   };
 
-  const logout = () => {
-    sessionStorage.removeItem(TOKEN_KEY);
-    sessionStorage.removeItem(USER_KEY);
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(USER_KEY);
-    setUser(null);
+  const logout = async () => {
+    try {
+      await api.auth.logout('admin');
+    } catch (e) {
+      console.error('Admin logout error:', e);
+    } finally {
+      setUser(null);
+    }
   };
 
   const isSuperuser = user?.role === 'superuser' || user?.role === 'super_admin';

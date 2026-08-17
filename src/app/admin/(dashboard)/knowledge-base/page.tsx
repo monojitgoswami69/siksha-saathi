@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '@/lib/client/api';
 import { useToast } from '@/context/ToastContext';
 import { DocumentInfo } from '@/types';
@@ -14,6 +14,9 @@ import {
   Layers,
   Plus,
   RefreshCw,
+  Loader2,
+  AlertTriangle,
+  CheckCircle2,
 } from 'lucide-react';
 import Link from 'next/link';
 import { formatBytes, formatDate } from '@/lib/client/utils';
@@ -27,25 +30,37 @@ export default function KnowledgeBasePage() {
   const [previewDoc, setPreviewDoc] = useState<DocumentInfo | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const pollTimerRef = useRef<NodeJS.Timeout | null>(null);
 
-  const loadDocuments = async () => {
-    setLoading(true);
+  const loadDocuments = async (silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const res = await api.documents.list();
-      setDocuments(res.documents || []);
+      const docs = res.documents || [];
+      setDocuments(docs);
+
+      // If any document is still processing, poll again in 3 seconds
+      const hasProcessing = docs.some((d: any) => d.status === 'processing');
+      if (hasProcessing) {
+        if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+        pollTimerRef.current = setTimeout(() => loadDocuments(true), 3000);
+      }
     } catch {
-      showError('Failed to load knowledge base documents');
+      if (!silent) showError('Failed to load knowledge base documents');
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadDocuments();
+    return () => {
+      if (pollTimerRef.current) clearTimeout(pollTimerRef.current);
+    };
   }, []);
 
   const handleDelete = async (docId: string) => {
-    if (!confirm('Are you sure you want to delete this document from NeonDB and Dropbox?')) return;
+    if (!confirm('Are you sure you want to delete this document from NeonDB and Cloud Storage?')) return;
     setDeletingId(docId);
     try {
       await api.documents.delete(docId);
@@ -81,7 +96,7 @@ export default function KnowledgeBasePage() {
         <div>
           <h1 className="text-2xl font-extrabold text-white">Course Knowledge Base</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Manage course materials, review pgvector chunks, and inspect Dropbox-hosted files.
+            Manage course materials, inspect pgvector semantic chunks, and monitor live indexing progress.
           </p>
         </div>
 
@@ -94,8 +109,9 @@ export default function KnowledgeBasePage() {
             <span>Add New Document</span>
           </Link>
           <button
-            onClick={loadDocuments}
+            onClick={() => loadDocuments(false)}
             className="p-2.5 bg-slate-900 hover:bg-slate-800 border border-slate-800 rounded-xl text-slate-300 transition-colors"
+            title="Refresh List"
           >
             <RefreshCw className="w-4 h-4" />
           </button>
@@ -135,16 +151,19 @@ export default function KnowledgeBasePage() {
                   <th className="py-3 px-4">Document Title</th>
                   <th className="py-3 px-4">Subject</th>
                   <th className="py-3 px-4">Stream / Sem</th>
-                  <th className="py-3 px-4">Chunks Indexed</th>
+                  <th className="py-3 px-4">Status & Chunks</th>
                   <th className="py-3 px-4">Size</th>
                   <th className="py-3 px-4">Uploaded</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
-                {filtered.map((doc) => {
+                {filtered.map((doc: any) => {
                   const docId = doc.document_id || doc.id;
                   const isDeleting = deletingId === docId;
+                  const status = doc.status || 'ready';
+                  const progress = doc.processing_progress || 0;
+
                   return (
                     <tr key={docId} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2.5">
@@ -159,8 +178,26 @@ export default function KnowledgeBasePage() {
                       <td className="py-3.5 px-4 text-slate-300 font-medium">
                         <span className="uppercase">{doc.stream || 'CSE'}</span> / Sem {doc.semester || '1'}
                       </td>
-                      <td className="py-3.5 px-4 font-mono text-emerald-400">
-                        {doc.total_chunks || doc.chunks_count || 0} chunks
+                      <td className="py-3.5 px-4">
+                        {status === 'processing' ? (
+                          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-amber-950/70 text-amber-300 border border-amber-800/60 animate-pulse">
+                            <Loader2 className="w-3 h-3 animate-spin" />
+                            <span>Indexing ({progress}%)</span>
+                          </span>
+                        ) : status === 'failed' ? (
+                          <span
+                            className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-semibold bg-rose-950/70 text-rose-300 border border-rose-800/60"
+                            title={doc.error_message || 'Indexing failed'}
+                          >
+                            <AlertTriangle className="w-3 h-3 text-rose-400" />
+                            <span>Failed</span>
+                          </span>
+                        ) : (
+                          <span className="font-mono text-emerald-400 flex items-center gap-1">
+                            <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>{doc.total_chunks || doc.chunks_count || 0} chunks</span>
+                          </span>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-slate-400">
                         {formatBytes(doc.file_size || doc.file_size_bytes || 0)}
@@ -171,7 +208,7 @@ export default function KnowledgeBasePage() {
                           <button
                             onClick={() => handlePreview(doc)}
                             className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
-                            title="Preview"
+                            title="Preview Document"
                           >
                             <Eye className="w-4 h-4" />
                           </button>
