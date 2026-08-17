@@ -13,8 +13,12 @@
     "db:seed": "node db-scripts/seed.mjs",
     "db:validate": "node db-scripts/validate.mjs",
     "db:verify": "node db-scripts/validate.mjs",
+    "db:clear": "node db-scripts/clear.mjs",
     "db:reset": "node db-scripts/reset.mjs",
-    "db:setup": "node db-scripts/init-schema.mjs && node db-scripts/seed.mjs && node db-scripts/validate.mjs"
+    "db:setup": "node db-scripts/init-schema.mjs && node db-scripts/seed.mjs && node db-scripts/validate.mjs",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
+    "db:studio": "drizzle-kit studio"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",
@@ -24,6 +28,7 @@
     "clsx": "2.1.1",
     "csv-parse": "7.0.2",
     "date-fns": "4.4.0",
+    "drizzle-orm": "^0.45.2",
     "dropbox": "10.44.0",
     "framer-motion": "13.0.0",
     "google-auth-library": "11.0.0",
@@ -48,6 +53,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "autoprefixer": "10.5.4",
+    "drizzle-kit": "^0.31.10",
     "postcss": "8.5.26",
     "tailwindcss": "4.3.3",
     "typescript": "^6.0.3"
