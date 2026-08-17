@@ -1,0 +1,93 @@
+import { NextRequest, NextResponse } from 'next/server';
+import { getAuthUser } from '@/lib/server/auth';
+import { query, initDbSchema } from '@/lib/server/db';
+import { generateQuizStructured } from '@/lib/server/llm';
+
+export async function POST(req: NextRequest) {
+  try {
+    await initDbSchema();
+    const user = await getAuthUser(req);
+    if (!user) {
+      return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const {
+      subject = 'General',
+      num_questions = 5,
+      document_id,
+      module,
+      stream: reqStream,
+      semester: reqSem,
+    } = body;
+
+    // Auto-lookup student profile for stream/semester scoping
+    let studentStream = reqStream;
+    let studentSem = reqSem;
+    try {
+      const profileRes = await query(
+        'SELECT stream, sem FROM student_users WHERE id = $1;',
+        [user.uid]
+      );
+      if (profileRes.rowCount && profileRes.rowCount > 0) {
+        const profile = profileRes.rows[0] as any;
+        studentStream = studentStream || profile.stream;
+        studentSem = studentSem || profile.sem;
+      }
+    } catch {}
+
+    // Collect chunks from database — scoped by student's enrollment
+    let sql = `SELECT raw_content, title, source, subject FROM document_chunks WHERE 1=1`;
+    const params: any[] = [];
+    let pIdx = 1;
+
+    const targetDocId = module || document_id;
+    if (targetDocId) {
+      sql += ` AND document_id = $${pIdx}`;
+      params.push(targetDocId);
+      pIdx++;
+    } else {
+      // Subject filter
+      if (subject && subject !== 'All Subjects') {
+        sql += ` AND (LOWER(subject) = LOWER($${pIdx}) OR subject = 'General' OR subject IS NULL)`;
+        params.push(subject);
+        pIdx++;
+      }
+
+      // Mandatory stream/semester segregation
+      if (studentStream && studentStream !== 'All') {
+        sql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;
+        params.push(studentStream);
+        pIdx++;
+      }
+      if (studentSem && studentSem !== 'All') {
+        sql += ` AND (semester = $${pIdx} OR semester = 'General' OR semester IS NULL)`;
+        params.push(studentSem);
+        pIdx++;
+      }
+    }
+
+    sql += ` ORDER BY chunk_index ASC LIMIT 25;`;
+    const res = await query(sql, params);
+
+    let contextText = '';
+    if (res.rowCount && res.rowCount > 0) {
+      contextText = res.rows
+        .map((r, i) => `--- Section ${i + 1} (${r.title || r.source}) ---\n${r.raw_content}`)
+        .join('\n\n');
+    } else {
+      contextText = `Course syllabus and overview for ${subject}. Key concepts, architectures, definitions, and operational principles.`;
+    }
+
+    const quiz = await generateQuizStructured({
+      subject,
+      contextText,
+      numQuestions: Math.min(Math.max(num_questions, 3), 20),
+    });
+
+    return NextResponse.json(quiz);
+  } catch (err: any) {
+    console.error('Quiz generation error:', err);
+    return NextResponse.json({ detail: err.message || 'Failed to generate quiz' }, { status: 500 });
+  }
+}

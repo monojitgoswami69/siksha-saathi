@@ -1,0 +1,201 @@
+/**
+ * Universal Client API Service
+ * Connects to Next.js API route handlers (/api/v1/...)
+ */
+
+import { DocumentInfo, QuizResponse, QuizHistoryItem, UserProfile } from '@/types';
+
+export const API_BASE_URL = '/api/v1';
+
+export class ApiError extends Error {
+  status: number;
+  data: any;
+  constructor(message: string, status = 500, data = {}) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+    this.data = data;
+  }
+}
+
+function getToken(scope?: 'student' | 'admin'): string | null {
+  if (typeof window === 'undefined') return null;
+  if (scope === 'admin') {
+    return (
+      sessionStorage.getItem('admin_token') ||
+      localStorage.getItem('admin_token') ||
+      sessionStorage.getItem('student_token') ||
+      localStorage.getItem('student_token')
+    );
+  }
+  return (
+    sessionStorage.getItem('student_token') ||
+    localStorage.getItem('student_token') ||
+    sessionStorage.getItem('admin_token') ||
+    localStorage.getItem('admin_token')
+  );
+}
+
+async function request<T = any>(
+  endpoint: string,
+  options: RequestInit = {},
+  scope?: 'student' | 'admin'
+): Promise<T> {
+  const url = `${API_BASE_URL}${endpoint}`;
+  const token = getToken(scope);
+
+  const headers: Record<string, string> = {
+    ...((options.headers as Record<string, string>) || {}),
+  };
+
+  if (token) {
+    headers['Authorization'] = `Bearer ${token}`;
+  }
+
+  if (!(options.body instanceof FormData) && !headers['Content-Type']) {
+    headers['Content-Type'] = 'application/json';
+  }
+
+  const res = await fetch(url, {
+    ...options,
+    headers,
+  });
+
+  if (!res.ok) {
+    const errorData = await res.json().catch(() => ({}));
+    const message = errorData.detail || errorData.message || `Request failed (${res.status})`;
+    throw new ApiError(message, res.status, errorData);
+  }
+
+  return res.json();
+}
+
+export const api = {
+  auth: {
+    studentLogin: (email: string, password: string) =>
+      request('/student/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+    studentRegister: (data: any) =>
+      request('/student/register', { method: 'POST', body: JSON.stringify(data) }),
+    adminLogin: (email: string, password: string) =>
+      request('/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) }, 'admin'),
+    googleAuth: (payload: string | { idToken?: string; accessToken?: string }) =>
+      request('/auth/google', {
+        method: 'POST',
+        body: JSON.stringify(typeof payload === 'string' ? { idToken: payload } : payload),
+      }),
+    getMe: (scope: 'student' | 'admin' = 'student') =>
+      request('/auth/me', { method: 'GET' }, scope),
+    updateProfile: (data: any, scope: 'student' | 'admin' = 'student') =>
+      request('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }, scope),
+  },
+
+  sessions: {
+    list: () => request('/sessions', { method: 'GET' }),
+    create: (title = 'New Chat') =>
+      request('/sessions', { method: 'POST', body: JSON.stringify({ title }) }),
+    delete: (sessionId: string) =>
+      request(`/sessions/${sessionId}`, { method: 'DELETE' }),
+    update: (sessionId: string, data: { title?: string; is_pinned?: boolean }) =>
+      request(`/sessions/${sessionId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    getMessages: (sessionId: string) =>
+      request(`/sessions/${sessionId}/messages`, { method: 'GET' }),
+  },
+
+  quiz: {
+    generate: (subject: string, num_questions = 5, document_id?: string): Promise<QuizResponse> =>
+      request('/quiz/generate', {
+        method: 'POST',
+        body: JSON.stringify({ subject, num_questions, document_id }),
+      }),
+    submit: (data: any) =>
+      request('/quiz/submit', { method: 'POST', body: JSON.stringify(data) }),
+    history: (): Promise<{ quiz_history: QuizHistoryItem[]; total_quizzes: number; average_percentage: number }> =>
+      request('/quiz/history', { method: 'GET' }),
+  },
+
+  documents: {
+    list: (params: { stream?: string; semester?: string; subject?: string } = {}): Promise<{ documents: DocumentInfo[]; total: number }> => {
+      const q = new URLSearchParams();
+      if (params.stream) q.append('stream', params.stream);
+      if (params.semester) q.append('semester', params.semester);
+      if (params.subject) q.append('subject', params.subject);
+      return request(`/documents?${q.toString()}`, { method: 'GET' });
+    },
+    ingest: (formData: FormData | object) => {
+      const isForm = formData instanceof FormData;
+      return request(
+        '/ingest',
+        {
+          method: 'POST',
+          body: isForm ? formData : JSON.stringify(formData),
+        },
+        'admin'
+      );
+    },
+    delete: (docId: string) =>
+      request(`/documents/${docId}`, { method: 'DELETE' }, 'admin'),
+    getPreviewUrl: (docId: string): Promise<{ preview_url: string; title: string }> =>
+      request(`/documents/${docId}/preview`, { method: 'GET' }),
+    getDownloadUrl: (docId: string): Promise<{ download_url: string; title: string }> =>
+      request(`/documents/${docId}/download`, { method: 'GET' }),
+    download: async (docId: string, filename: string) => {
+      const token =
+        typeof window !== 'undefined'
+          ? sessionStorage.getItem('student_token') || sessionStorage.getItem('admin_token')
+          : null;
+      const res = await fetch(`/api/v1/documents/${docId}/download`, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      });
+      const blob = await res.blob();
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      window.URL.revokeObjectURL(url);
+    },
+    getContent: (docId: string) =>
+      request(`/documents/${docId}/content`, { method: 'GET' }, 'admin'),
+  },
+
+  filters: {
+    getFilters: () => request('/filters', { method: 'GET' }),
+    getCurriculum: (stream?: string, semester?: string) => {
+      const q = new URLSearchParams();
+      if (stream) q.append('stream', stream);
+      if (semester) q.append('semester', semester);
+      return request(`/curriculum?${q.toString()}`, { method: 'GET' });
+    },
+    saveCurriculum: (data: { stream: string; semester: string; subjects: any[] }) =>
+      request('/admin/curriculum', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
+  },
+
+  admin: {
+    dashboard: () => request('/admin/dashboard', { method: 'GET' }, 'admin'),
+    enrollStudents: (data: { csv_data: string; stream?: string; semester?: string }) =>
+      request('/admin/enroll_students', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
+    getStudents: (params: { stream?: string; semester?: string } = {}) => {
+      const q = new URLSearchParams();
+      if (params.stream) q.append('stream', params.stream);
+      if (params.semester) q.append('semester', params.semester);
+      return request(`/students?${q.toString()}`, { method: 'GET' }, 'admin');
+    },
+  },
+
+  analytics: {
+    overview: (stream?: string) => {
+      const q = stream ? `?stream=${stream}` : '';
+      return request(`/analytics/overview${q}`, { method: 'GET' }, 'admin');
+    },
+    stream: (semester?: string) => {
+      const q = semester ? `?semester=${semester}` : '';
+      return request(`/analytics/stream${q}`, { method: 'GET' }, 'admin');
+    },
+    subject: (subject: string) =>
+      request(`/analytics/subject/${encodeURIComponent(subject)}`, { method: 'GET' }, 'admin'),
+    student: (uid: string) =>
+      request(`/analytics/student/${uid}`, { method: 'GET' }, 'admin'),
+  },
+};
