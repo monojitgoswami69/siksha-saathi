@@ -1,12 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, requireRole, hashPassword } from '@/lib/server/auth';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 import { parse } from 'csv-parse/sync';
 import { logAudit } from '@/lib/server/audit';
 
 export async function POST(req: NextRequest) {
   try {
-    await initDbSchema();
     const user = await getAuthUser(req);
     if (!user) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
@@ -35,7 +34,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: `Invalid CSV format: ${e.message}` }, { status: 400 });
     }
 
-    const defaultPasswordHash = await hashPassword('student123');
+    const defaultPassword = process.env.DEFAULT_STUDENT_PASSWORD || 'student123';
+    const defaultPasswordHash = await hashPassword(defaultPassword);
+    const defaultStream = process.env.DEFAULT_STUDENT_STREAM || 'cse';
+    const defaultSem = process.env.DEFAULT_STUDENT_SEM || '1';
+    const defaultBatch = process.env.DEFAULT_STUDENT_BATCH || '2024-2028';
     let enrolled = 0;
     let skipped = 0;
     const errors: string[] = [];
@@ -44,9 +47,9 @@ export async function POST(req: NextRequest) {
       const email = (row.email || row.Email || '').trim().toLowerCase();
       const name = (row.name || row.Name || '').trim();
       const roll = (row.roll || row.Roll || row.roll_no || row.RollNo || '').trim();
-      const studentStream = (row.stream || row.Stream || stream || 'cse').trim().toLowerCase();
-      const studentSem = (row.sem || row.Sem || row.semester || row.Semester || semester || '1').trim();
-      const batch = (row.batch || row.Batch || '2024-2028').trim();
+      const studentStream = (row.stream || row.Stream || stream || defaultStream).trim().toLowerCase();
+      const studentSem = (row.sem || row.Sem || row.semester || row.Semester || semester || defaultSem).trim();
+      const batch = (row.batch || row.Batch || defaultBatch).trim();
 
       if (!email) {
         skipped++;

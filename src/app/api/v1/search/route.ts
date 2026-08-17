@@ -1,13 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 import { getEmbedding, formatVector } from '@/lib/server/embeddings';
 
-const SIMILARITY_THRESHOLD = 0.3;
+const SIMILARITY_THRESHOLD = parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.3');
 
 export async function POST(req: NextRequest) {
   try {
-    await initDbSchema();
     const user = await getAuthUser(req);
     if (!user) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });

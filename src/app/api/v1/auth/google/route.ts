@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 import { verifyGoogleIdToken, createAccessToken } from '@/lib/server/auth';
 
 export async function POST(req: NextRequest) {
   try {
-    await initDbSchema();
     const body = await req.json();
     const { idToken, accessToken } = body;
 
@@ -63,11 +62,15 @@ export async function POST(req: NextRequest) {
     let student;
     if (studentRes.rowCount === 0) {
       // Create new student user
+      const defaultStream = process.env.DEFAULT_STUDENT_STREAM || 'cse';
+      const defaultSem = process.env.DEFAULT_STUDENT_SEM || '1';
+      const defaultBatch = process.env.DEFAULT_STUDENT_BATCH || '2024-2028';
+
       const insertRes = await query(
         `INSERT INTO student_users (email, google_id, display_name, name, avatar_url, stream, sem, batch)
-         VALUES ($1, $2, $3, $4, $5, 'cse', '1', '2024-2028')
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
          RETURNING *;`,
-        [cleanEmail, googleId, name, name, picture]
+        [cleanEmail, googleId, name, name, picture, defaultStream, defaultSem, defaultBatch]
       );
       student = insertRes.rows[0];
     } else {

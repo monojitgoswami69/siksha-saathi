@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, requireRole } from '@/lib/server/auth';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 import { extractDocumentContent, chunkExtractedDocument } from '@/lib/server/documentProcessor';
 import { getBatchEmbeddings, formatVector } from '@/lib/server/embeddings';
 import { uploadStorageFile } from '@/lib/server/storage';
@@ -9,7 +9,6 @@ import { logAudit } from '@/lib/server/audit';
 export async function POST(req: NextRequest) {
   const t0 = Date.now();
   try {
-    await initDbSchema();
     const user = await getAuthUser(req);
     if (!user) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });

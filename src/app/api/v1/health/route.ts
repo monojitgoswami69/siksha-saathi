@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 
 export async function GET() {
   try {
-    await initDbSchema();
     const dbRes = await query('SELECT NOW() as time;');
     const chunkRes = await query('SELECT COUNT(*) as total_chunks FROM document_chunks;');
     const docRes = await query('SELECT COUNT(*) as total_docs FROM documents;');

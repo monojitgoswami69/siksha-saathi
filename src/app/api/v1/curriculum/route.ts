@@ -1,9 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 
 export async function GET(req: NextRequest) {
   try {
-    await initDbSchema();
     const { searchParams } = new URL(req.url);
     const stream = searchParams.get('stream');
     const semester = searchParams.get('semester');

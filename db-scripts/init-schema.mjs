@@ -1,0 +1,283 @@
+#!/usr/bin/env node
+
+/**
+ * Database Schema Initialization Script
+ * Creates extensions (uuid-ossp, pgvector), all 10 application tables, and indexes.
+ *
+ * Usage: npm run db:init
+ */
+
+import pg from 'pg';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const rootDir = path.resolve(__dirname, '..');
+
+// Load environment variables from .env.local or .env
+function loadEnv() {
+  const envLocal = path.join(rootDir, '.env.local');
+  const envDefault = path.join(rootDir, '.env');
+  
+  if (typeof process.loadEnvFile === 'function') {
+    if (fs.existsSync(envLocal)) {
+      process.loadEnvFile(envLocal);
+    } else if (fs.existsSync(envDefault)) {
+      process.loadEnvFile(envDefault);
+    }
+  } else {
+    const targetFile = fs.existsSync(envLocal) ? envLocal : fs.existsSync(envDefault) ? envDefault : null;
+    if (targetFile) {
+      const content = fs.readFileSync(targetFile, 'utf8');
+      content.split('\n').forEach((line) => {
+        const trimmed = line.trim();
+        if (trimmed && !trimmed.startsWith('#') && trimmed.includes('=')) {
+          const [key, ...rest] = trimmed.split('=');
+          const val = rest.join('=').trim().replace(/^["']|["']$/g, '');
+          if (key && !process.env[key.trim()]) {
+            process.env[key.trim()] = val;
+          }
+        }
+      });
+    }
+  }
+}
+
+loadEnv();
+
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('❌ ERROR: DATABASE_URL is not set in environment or .env.local');
+  process.exit(1);
+}
+
+const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+const pool = new pg.Pool({
+  connectionString,
+  ...(isLocal ? { ssl: false } : {}),
+  connectionTimeoutMillis: 10000,
+});
+
+async function initSchema() {
+  console.log('🚀 Starting Database Schema Initialization...\n');
+  const client = await pool.connect();
+
+  try {
+    await client.query('BEGIN');
+
+    // 1. Extensions
+    console.log('📦 Enabling PostgreSQL extensions...');
+    await client.query('CREATE EXTENSION IF NOT EXISTS "uuid-ossp";');
+    try {
+      await client.query('CREATE EXTENSION IF NOT EXISTS vector;');
+      console.log('   ✅ Extension: pgvector enabled');
+    } catch (e) {
+      console.warn('   ⚠️ Note: pgvector extension could not be created directly (might require elevated permissions or already enabled):', e.message);
+    }
+    console.log('   ✅ Extension: uuid-ossp enabled');
+
+    // 2. Dashboard Users (Admin, HOD, Faculty)
+    console.log('🛠️ Creating tables...');
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS dashboard_users (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255) NOT NULL,
+        role VARCHAR(50) NOT NULL DEFAULT 'faculty',
+        display_name VARCHAR(255),
+        stream VARCHAR(100),
+        department VARCHAR(100),
+        organization_name VARCHAR(255),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('   ✅ Table: dashboard_users');
+
+    // 3. Student Users
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS student_users (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        email VARCHAR(255) UNIQUE NOT NULL,
+        password_hash VARCHAR(255),
+        google_id VARCHAR(255) UNIQUE,
+        display_name VARCHAR(255) NOT NULL,
+        name VARCHAR(255),
+        roll VARCHAR(100),
+        stream VARCHAR(100) NOT NULL DEFAULT 'cse',
+        sem VARCHAR(20) NOT NULL DEFAULT '1',
+        batch VARCHAR(50),
+        avatar_url VARCHAR(500),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('   ✅ Table: student_users');
+
+    // 4. Documents
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS documents (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        title VARCHAR(255) NOT NULL,
+        source VARCHAR(255) NOT NULL,
+        mime_type VARCHAR(100),
+        file_size_bytes BIGINT DEFAULT 0,
+        storage_provider VARCHAR(50) DEFAULT 'r2',
+        file_key VARCHAR(500),
+        preview_url VARCHAR(1000),
+        dropbox_path VARCHAR(500),
+        dropbox_shared_link VARCHAR(500),
+        stream VARCHAR(100),
+        semester VARCHAR(20),
+        subject VARCHAR(200),
+        module VARCHAR(200),
+        uploaded_by UUID,
+        uploader_email VARCHAR(255),
+        total_chunks INT DEFAULT 0,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_provider VARCHAR(50) DEFAULT 'r2';
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_key VARCHAR(500);
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS preview_url VARCHAR(1000);
+    `);
+    console.log('   ✅ Table: documents');
+
+    // 5. Document Chunks (Vector Store)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS document_chunks (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+        chunk_index INT NOT NULL,
+        total_chunks INT NOT NULL,
+        raw_content TEXT NOT NULL,
+        page_start INT,
+        page_end INT,
+        source VARCHAR(255) NOT NULL,
+        title VARCHAR(255),
+        stream VARCHAR(100),
+        semester VARCHAR(20),
+        subject VARCHAR(200),
+        module VARCHAR(200),
+        embedding vector(768),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('   ✅ Table: document_chunks');
+
+    // 6. Chat Sessions & Messages
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS chat_sessions (
+        id VARCHAR(100) PRIMARY KEY,
+        user_id UUID REFERENCES student_users(id) ON DELETE CASCADE,
+        title VARCHAR(255) NOT NULL DEFAULT 'New Chat',
+        is_pinned BOOLEAN DEFAULT FALSE,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS chat_messages (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        session_id VARCHAR(100) REFERENCES chat_sessions(id) ON DELETE CASCADE,
+        role VARCHAR(20) NOT NULL,
+        content TEXT NOT NULL,
+        sources JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('   ✅ Table: chat_sessions & chat_messages');
+
+    // 7. Quiz Results
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS quiz_results (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID REFERENCES student_users(id) ON DELETE CASCADE,
+        subject VARCHAR(200) NOT NULL,
+        module VARCHAR(200),
+        score INT NOT NULL,
+        total_questions INT NOT NULL,
+        percentage INT NOT NULL,
+        time_taken_seconds INT DEFAULT 0,
+        questions JSONB NOT NULL,
+        answers JSONB NOT NULL,
+        submitted_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('   ✅ Table: quiz_results');
+
+    // 8. Curriculum
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS curriculum (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        stream VARCHAR(100) NOT NULL,
+        semester VARCHAR(20) NOT NULL,
+        subjects JSONB NOT NULL DEFAULT '[]'::jsonb,
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_by UUID,
+        UNIQUE(stream, semester)
+      );
+    `);
+    console.log('   ✅ Table: curriculum');
+
+    // 9. Analytics & Audit Logs
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS query_logs (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID REFERENCES student_users(id) ON DELETE SET NULL,
+        query_text TEXT NOT NULL,
+        subject VARCHAR(200),
+        stream VARCHAR(100),
+        semester VARCHAR(20),
+        top_chunk_id UUID REFERENCES document_chunks(id) ON DELETE SET NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID,
+        user_email VARCHAR(255),
+        role VARCHAR(50),
+        action VARCHAR(100) NOT NULL,
+        target_type VARCHAR(100),
+        details JSONB,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+    `);
+    console.log('   ✅ Table: query_logs & audit_logs');
+
+    // 10. Indexes
+    console.log('⚡ Creating indexes...');
+    await client.query(`
+      CREATE INDEX IF NOT EXISTS idx_chunks_metadata ON document_chunks (stream, semester, subject);
+      CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON document_chunks (document_id);
+      CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages (session_id, created_at ASC);
+      CREATE INDEX IF NOT EXISTS idx_quiz_results_user ON quiz_results (user_id, submitted_at DESC);
+      CREATE INDEX IF NOT EXISTS idx_query_logs_analytics ON query_logs (stream, semester, subject, created_at);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs (created_at DESC);
+    `);
+
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON document_chunks 
+        USING hnsw (embedding vector_cosine_ops);
+      `);
+      console.log('   ✅ HNSW Vector Index: idx_chunks_embedding');
+    } catch (e) {
+      console.warn('   ⚠️ HNSW index creation note (requires pgvector):', e.message);
+    }
+
+    await client.query('COMMIT');
+    console.log('\n🎉 Schema initialization completed successfully!');
+  } catch (err) {
+    await client.query('ROLLBACK');
+    console.error('\n❌ Schema initialization failed:', err);
+    process.exit(1);
+  } finally {
+    client.release();
+    await pool.end();
+  }
+}
+
+initSchema();

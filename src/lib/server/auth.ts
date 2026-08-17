@@ -8,9 +8,13 @@ import { OAuth2Client } from 'google-auth-library';
 import { NextRequest } from 'next/server';
 import { query } from './db';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'siksha-saathi-super-secret-jwt-key';
-const secretKey = new TextEncoder().encode(JWT_SECRET);
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('CRITICAL SECURITY ERROR: JWT_SECRET environment variable is missing in production!');
+}
+const secretKey = new TextEncoder().encode(JWT_SECRET || 'siksha-saathi-dev-secret-key-change-in-production');
 const googleClient = new OAuth2Client(process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID);
+const BCRYPT_ROUNDS = parseInt(process.env.BCRYPT_ROUNDS || '10', 10);
 
 export interface TokenPayload {
   uid: string;
@@ -25,7 +29,7 @@ export interface TokenPayload {
  * Hash plain text password using bcryptjs
  */
 export async function hashPassword(plainText: string): Promise<string> {
-  const salt = await bcrypt.genSalt(10);
+  const salt = await bcrypt.genSalt(BCRYPT_ROUNDS);
   return bcrypt.hash(plainText, salt);
 }
 

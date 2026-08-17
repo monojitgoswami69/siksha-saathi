@@ -1,11 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 import { generateQuizStructured } from '@/lib/server/llm';
 
 export async function POST(req: NextRequest) {
   try {
-    await initDbSchema();
     const user = await getAuthUser(req);
     if (!user) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });

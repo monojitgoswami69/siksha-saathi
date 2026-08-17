@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 
 export async function GET() {
   try {
-    await initDbSchema();
 
     // Parallel: fetch all filter data at once
     const [streamRes, semRes, subjRes, curricRes] = await Promise.all([

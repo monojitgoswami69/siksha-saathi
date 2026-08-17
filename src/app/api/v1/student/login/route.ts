@@ -1,10 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 import { verifyPassword, createAccessToken } from '@/lib/server/auth';
 
 export async function POST(req: NextRequest) {
   try {
-    await initDbSchema();
     const body = await req.json();
     const { email, password } = body;
 

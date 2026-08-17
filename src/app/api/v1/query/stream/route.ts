@@ -1,17 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
-import { query, initDbSchema } from '@/lib/server/db';
+import { query } from '@/lib/server/db';
 import { getEmbedding, formatVector } from '@/lib/server/embeddings';
 import { streamSocraticChat } from '@/lib/server/llm';
 import { logStudentQuery } from '@/lib/server/audit';
 
-const SIMILARITY_THRESHOLD = 0.3;
+const SIMILARITY_THRESHOLD = parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.3');
 
 export async function POST(req: NextRequest) {
   try {
-    // Non-blocking schema init (runs once on cold start, 0ms subsequently)
-    initDbSchema().catch(() => {});
-
     const user = await getAuthUser(req);
     if (!user) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });

@@ -8,7 +8,13 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "get-dropbox-token": "node scripts/get-dropbox-token.mjs"
+    "get-dropbox-token": "node scripts/get-dropbox-token.mjs",
+    "db:init": "node db-scripts/init-schema.mjs",
+    "db:seed": "node db-scripts/seed.mjs",
+    "db:validate": "node db-scripts/validate.mjs",
+    "db:verify": "node db-scripts/validate.mjs",
+    "db:reset": "node db-scripts/reset.mjs",
+    "db:setup": "node db-scripts/init-schema.mjs && node db-scripts/seed.mjs && node db-scripts/validate.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",
