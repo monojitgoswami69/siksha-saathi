@@ -100,7 +100,7 @@ npm install
 npm run db:setup          # sets DATABASE_URL, SEED_ADMIN_* in .env.local first
 npm run dev               # http://localhost:3000
 ```
-Admin login: `admin@sikshasaathi.edu` / `admin123` (from `SEED_ADMIN_*` — **change before production**).
+Admin login: `admin@sikshasaathi.in` / `admin123` (from `SEED_ADMIN_*` — **change before production**).
 
 ### Ingestion worker (run locally or deploy to Render)
 ```bash
@@ -126,7 +126,7 @@ GEMINI_MODEL=gemini-3.1-flash-lite
 GEMINI_EMBEDDING_MODEL=gemini-embedding-001
 GEMINI_EMBEDDING_DIM=768
 JWT_SECRET=...
-SEED_ADMIN_EMAIL=admin@sikshasaathi.edu
+SEED_ADMIN_EMAIL=admin@sikshasaathi.in
 SEED_ADMIN_PASSWORD=admin123
 # R2 / Dropbox / Google OAuth ...
 ```

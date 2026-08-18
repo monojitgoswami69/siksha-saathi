@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
-import { resolveScope } from '@/lib/server/analyticsScope';
+import { resolveScope, dashboardScopeClause } from '@/lib/server/analyticsScope';
 
 export async function GET(req: NextRequest) {
   try {
@@ -34,16 +34,18 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    // Dashboard role scoping: admin=all, hod=their stream, faculty=own uploads
-    let facultyScoped = false;
-    if (user.scope === 'dashboard' && user.role !== 'admin' && user.role !== 'student') {
-      const scope = await resolveScope(user);
-      if (scope.mode === 'stream' && scope.stream && !stream) {
-        stream = scope.stream;
-      } else if (scope.mode === 'faculty') {
-        facultyScoped = true;
-      }
-    }
+    // Dashboard role scoping: admin=all; hod/faculty scoped by their
+    // assignments (multi-stream + faculty assignments) via dashboardScopeClause.
+    const dsc = (user.scope === 'dashboard' && user.role !== 'admin' && user.role !== 'student')
+      ? await (async () => {
+          const scope = await resolveScope(user);
+          return dashboardScopeClause(
+            { stream: 'stream', semester: 'semester', section: 'section', subject: 'subject' },
+            scope,
+            1
+          );
+        })()
+      : { sql: '', params: [] as any[], nextIdx: 1 };
 
     let sql = `
       SELECT id as document_id, id, title, file_name, mime_type, file_size_bytes as file_size,
@@ -52,14 +54,8 @@ export async function GET(req: NextRequest) {
       FROM documents
       WHERE 1=1
     `;
-    const params: any[] = [];
-    let pIdx = 1;
-
-    if (facultyScoped) {
-      sql += ` AND uploaded_by = $${pIdx}`;
-      params.push(user.uid);
-      pIdx++;
-    }
+    const params: any[] = [...dsc.params];
+    let pIdx = dsc.nextIdx;
 
     if (stream && stream !== 'All') {
       sql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;
@@ -81,6 +77,8 @@ export async function GET(req: NextRequest) {
       params.push(subject);
       pIdx++;
     }
+
+    sql += dsc.sql;
 
     sql += ` ORDER BY created_at DESC;`;
 

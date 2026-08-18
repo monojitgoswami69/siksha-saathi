@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   X,
   RefreshCw,
+  KeyRound,
 } from 'lucide-react';
 import { formatDate } from '@/lib/client/utils';
 
@@ -28,6 +29,11 @@ export default function StudentsPage() {
   const [csvText, setCsvText] = useState('');
   const [enrollPassword, setEnrollPassword] = useState('');
   const [enrolling, setEnrolling] = useState(false);
+
+  // Single-add modal state
+  const [showAddModal, setShowAddModal] = useState(false);
+  const [addForm, setAddForm] = useState({ email: '', name: '', roll: '', stream: 'cse', sem: '1', section: 'cse1', password: '' });
+  const [adding, setAdding] = useState(false);
 
   const loadStudents = async () => {
     setLoading(true);
@@ -49,7 +55,7 @@ export default function StudentsPage() {
 
   const handleEnrollSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!csvText.trim() || !enrollPassword.trim()) return;
+    if (!csvText.trim()) return;
 
     setEnrolling(true);
     try {
@@ -73,6 +79,32 @@ export default function StudentsPage() {
     }
   };
 
+  const handleAddSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setAdding(true);
+    try {
+      await api.admin.createStudent(addForm);
+      showSuccess('Student created');
+      setShowAddModal(false);
+      setAddForm({ email: '', name: '', roll: '', stream: 'cse', sem: '1', section: 'cse1', password: '' });
+      loadStudents();
+    } catch (err: any) {
+      showError(err.message || 'Failed to create student');
+    } finally {
+      setAdding(false);
+    }
+  };
+
+  const handleResetStudent = async (uid: string) => {
+    if (!confirm('Reset this student\u2019s password to the default (student123)?')) return;
+    try {
+      await api.admin.resetStudentPassword(uid);
+      showSuccess('Password reset to student123');
+    } catch (err: any) {
+      showError(err.message || 'Reset failed');
+    }
+  };
+
   const filtered = students.filter(
     (s) =>
       (s.name || s.display_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -92,6 +124,13 @@ export default function StudentsPage() {
         </div>
 
         <div className="flex items-center gap-2.5">
+          <button
+            onClick={() => setShowAddModal(true)}
+            className="flex items-center gap-2 px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-emerald-600/30 transition-all"
+          >
+            <UserPlus className="w-4 h-4" />
+            <span>Add Student</span>
+          </button>
           <button
             onClick={() => setShowEnrollModal(true)}
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all"
@@ -162,6 +201,7 @@ export default function StudentsPage() {
                   <th className="py-3 px-4">Stream / Sem</th>
                   <th className="py-3 px-4">Section</th>
                   <th className="py-3 px-4">Enrolled Date</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
@@ -183,6 +223,15 @@ export default function StudentsPage() {
                     </td>
                     <td className="py-3.5 px-4 text-slate-400 uppercase font-semibold">{st.section || '—'}</td>
                     <td className="py-3.5 px-4 text-slate-500">{formatDate(st.created_at)}</td>
+                    <td className="py-3.5 px-4 text-right">
+                      <button
+                        onClick={() => handleResetStudent(st.uid)}
+                        className="p-1.5 hover:bg-amber-950/60 text-slate-400 hover:text-amber-400 rounded-lg transition-colors"
+                        title="Reset password to student123"
+                      >
+                        <KeyRound className="w-4 h-4" />
+                      </button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -220,15 +269,14 @@ export default function StudentsPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
-                  Initial Password <span className="text-rose-400">*</span>
+                  Initial Password <span className="text-slate-600 normal-case font-normal">(optional — defaults to student123)</span>
                 </label>
                 <input
                   type="text"
-                  required
                   minLength={6}
                   value={enrollPassword}
                   onChange={(e) => setEnrollPassword(e.target.value)}
-                  placeholder="e.g. student123 (applied to all enrolled rows)"
+                  placeholder="student123"
                   className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500/30 outline-none"
                 />
                 <p className="text-[10px] text-slate-500 mt-1">Students can change this after first login.</p>
@@ -258,11 +306,38 @@ export default function StudentsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={enrolling || !csvText.trim() || !enrollPassword.trim()}
+                  disabled={enrolling || !csvText.trim()}
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40"
                 >
                   {enrolling ? 'Enrolling...' : 'Import & Create Accounts'}
                 </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* Single Student Add Modal */}
+      {showAddModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="font-bold text-white text-base">Add Student</h3>
+              <button onClick={() => setShowAddModal(false)} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
+            </div>
+            <form onSubmit={handleAddSubmit} className="space-y-3">
+              <div className="grid grid-cols-2 gap-3">
+                <input required type="email" placeholder="Email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none" />
+                <input type="text" placeholder="Password (default student123)" minLength={6} value={addForm.password} onChange={(e) => setAddForm({ ...addForm, password: e.target.value })} className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono outline-none" />
+                <input required type="text" placeholder="Full name" value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none" />
+                <input required type="text" placeholder="Roll number" value={addForm.roll} onChange={(e) => setAddForm({ ...addForm, roll: e.target.value })} className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none" />
+                <input required type="text" placeholder="Stream (e.g. cse)" value={addForm.stream} onChange={(e) => setAddForm({ ...addForm, stream: e.target.value })} className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase outline-none" />
+                <input required type="text" placeholder="Semester" value={addForm.sem} onChange={(e) => setAddForm({ ...addForm, sem: e.target.value })} className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white outline-none" />
+                <input required type="text" placeholder="Section (e.g. cse1)" value={addForm.section} onChange={(e) => setAddForm({ ...addForm, section: e.target.value })} className="px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase outline-none col-span-2" />
+              </div>
+              <div className="flex gap-2 justify-end pt-3 border-t border-slate-800">
+                <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancel</button>
+                <button type="submit" disabled={adding} className="px-5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-bold disabled:opacity-40">{adding ? 'Creating...' : 'Create Student'}</button>
               </div>
             </form>
           </div>

@@ -60,7 +60,7 @@ if (!connectionString) {
 }
 
 // Configurable Admin Seed Parameters
-const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@sikshasaathi.edu').trim().toLowerCase();
+const adminEmail = (process.env.SEED_ADMIN_EMAIL || 'admin@sikshasaathi.in').trim().toLowerCase();
 const adminPassword = process.env.SEED_ADMIN_PASSWORD || 'admin123';
 const adminName = process.env.SEED_ADMIN_NAME || 'Siksha Saathi Administrator';
 const orgName = process.env.SEED_ORG_NAME || 'Siksha Saathi College';

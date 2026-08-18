@@ -13,10 +13,18 @@ import {
   KeyRound,
   Trash2,
   Pencil,
+  Plus,
 } from 'lucide-react';
 import { formatDate } from '@/lib/client/utils';
 
 type Role = 'admin' | 'hod' | 'faculty';
+
+interface Assignment {
+  stream: string;
+  semester: string;
+  section: string;
+  subject: string;
+}
 
 interface FacultyUser {
   uid: string;
@@ -26,6 +34,8 @@ interface FacultyUser {
   stream?: string;
   department?: string;
   organization_name?: string;
+  hod_streams?: string[];
+  faculty_assignments?: Assignment[];
   created_at: string;
 }
 
@@ -34,6 +44,8 @@ const ROLE_STYLE: Record<Role, string> = {
   hod: 'bg-violet-950 text-violet-300 border border-violet-800',
   faculty: 'bg-slate-800 text-slate-300 border border-slate-700',
 };
+
+const SEMS = ['1', '2', '3', '4', '5', '6', '7', '8'];
 
 export default function ManageFacultyPage() {
   const { showSuccess, showError } = useToast();
@@ -46,13 +58,19 @@ export default function ManageFacultyPage() {
   const [resetTarget, setResetTarget] = useState<FacultyUser | null>(null);
   const [submitting, setSubmitting] = useState(false);
 
+  // Curriculum data for dropdowns
+  const [curriculum, setCurriculum] = useState<Record<string, Record<string, string[]>>>({});
+  const [filterStreams, setFilterStreams] = useState<string[]>([]);
+  const [filterSections, setFilterSections] = useState<string[]>([]);
+
   const [form, setForm] = useState({
     email: '',
     password: '',
     displayName: '',
     role: 'faculty' as Role,
-    stream: '',
     department: '',
+    hodStreams: [] as string[],
+    assignments: [] as Assignment[],
   });
   const [newPassword, setNewPassword] = useState('');
 
@@ -70,7 +88,17 @@ export default function ManageFacultyPage() {
 
   useEffect(() => {
     load();
+    api.filters
+      .getFilters()
+      .then((data) => {
+        if (data?.curriculum) setCurriculum(data.curriculum);
+        if (Array.isArray(data.streams)) setFilterStreams(data.streams);
+        if (Array.isArray(data.sections)) setFilterSections(data.sections);
+      })
+      .catch(() => {});
   }, []);
+
+  const allStreams = Array.from(new Set([...filterStreams, ...Object.keys(curriculum)])).sort();
 
   const openCreate = () => {
     setEditing(null);
@@ -79,8 +107,9 @@ export default function ManageFacultyPage() {
       password: '',
       displayName: '',
       role: 'faculty',
-      stream: '',
       department: '',
+      hodStreams: [],
+      assignments: [],
     });
     setShowModal(true);
   };
@@ -92,23 +121,55 @@ export default function ManageFacultyPage() {
       password: '',
       displayName: u.display_name,
       role: u.role,
-      stream: u.stream || '',
       department: u.department || '',
+      hodStreams: u.hod_streams || [],
+      assignments: u.faculty_assignments || [],
     });
     setShowModal(true);
+  };
+
+  const toggleHodStream = (s: string) => {
+    setForm((f) => {
+      const has = f.hodStreams.includes(s);
+      return { ...f, hodStreams: has ? f.hodStreams.filter((x) => x !== s) : [...f.hodStreams, s] };
+    });
+  };
+
+  const addAssignment = () => {
+    const firstStream = allStreams[0] || 'cse';
+    const firstSem = SEMS[0];
+    const firstSection = filterSections[0] || `${firstStream}1`;
+    const firstSubject = curriculum[firstStream]?.[firstSem]?.[0] || 'General';
+    setForm((f) => ({
+      ...f,
+      assignments: [...f.assignments, { stream: firstStream, semester: firstSem, section: firstSection, subject: firstSubject }],
+    }));
+  };
+
+  const updateAssignment = (idx: number, field: keyof Assignment, value: string) => {
+    setForm((f) => ({
+      ...f,
+      assignments: f.assignments.map((a, i) => (i === idx ? { ...a, [field]: value } : a)),
+    }));
+  };
+
+  const removeAssignment = (idx: number) => {
+    setForm((f) => ({ ...f, assignments: f.assignments.filter((_, i) => i !== idx) }));
   };
 
   const submit = async (e: React.FormEvent) => {
     e.preventDefault();
     setSubmitting(true);
     try {
+      const payload: any = {
+        displayName: form.displayName,
+        role: form.role,
+        department: form.department || undefined,
+        hodStreams: form.hodStreams,
+        facultyAssignments: form.assignments,
+      };
       if (editing) {
-        await api.admin.updateFaculty(editing.uid, {
-          displayName: form.displayName,
-          role: form.role,
-          stream: form.stream || undefined,
-          department: form.department || undefined,
-        });
+        await api.admin.updateFaculty(editing.uid, payload);
         showSuccess('Faculty account updated');
       } else {
         await api.admin.createFaculty({
@@ -116,8 +177,9 @@ export default function ManageFacultyPage() {
           password: form.password,
           displayName: form.displayName,
           role: form.role,
-          stream: form.stream || undefined,
           department: form.department || undefined,
+          hodStreams: form.hodStreams,
+          facultyAssignments: form.assignments,
         });
         showSuccess('Faculty account created');
       }
@@ -170,7 +232,7 @@ export default function ManageFacultyPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-white">Manage Faculty & Coordinators</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Provision teachers, HODs, and administrators. Assign roles, streams, and reset passwords.
+            Provision teachers/HODs. Assign multiple streams (HOD) and multiple subject/sem/section combos (faculty).
           </p>
         </div>
         <div className="flex items-center gap-2.5">
@@ -190,17 +252,15 @@ export default function ManageFacultyPage() {
         </div>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
-        <div className="relative w-full sm:w-80">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
-          <input
-            type="text"
-            value={searchTerm}
-            onChange={(e) => setSearchTerm(e.target.value)}
-            placeholder="Search by name, email, or department..."
-            className="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/30 outline-none"
-          />
-        </div>
+      <div className="relative w-full sm:w-80">
+        <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-3.5" />
+        <input
+          type="text"
+          value={searchTerm}
+          onChange={(e) => setSearchTerm(e.target.value)}
+          placeholder="Search by name, email, or department..."
+          className="w-full pl-9 pr-4 py-2.5 bg-slate-900 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/30 outline-none"
+        />
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8">
@@ -221,57 +281,66 @@ export default function ManageFacultyPage() {
               <thead>
                 <tr className="border-b border-slate-800 text-slate-400 uppercase font-semibold">
                   <th className="py-3 px-4">Name</th>
-                  <th className="py-3 px-4">Email</th>
                   <th className="py-3 px-4">Role</th>
-                  <th className="py-3 px-4">Stream / Dept</th>
-                  <th className="py-3 px-4">Added</th>
+                  <th className="py-3 px-4">HOD Streams</th>
+                  <th className="py-3 px-4">Teaches</th>
                   <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-800/60">
                 {filtered.map((u) => (
-                  <tr key={u.uid} className="hover:bg-slate-800/40 transition-colors">
-                    <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2.5">
-                      <div className="w-7 h-7 rounded-full bg-slate-800 font-bold flex items-center justify-center text-[10px] text-indigo-400">
-                        {u.display_name?.charAt(0) || 'F'}
+                  <tr key={u.uid} className="hover:bg-slate-800/40 transition-colors align-top">
+                    <td className="py-3.5 px-4 font-bold text-white">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-7 h-7 rounded-full bg-slate-800 font-bold flex items-center justify-center text-[10px] text-indigo-400 flex-shrink-0">
+                          {u.display_name?.charAt(0) || 'F'}
+                        </div>
+                        <div className="min-w-0">
+                          <div>{u.display_name}</div>
+                          <div className="font-mono font-normal text-slate-500 truncate">{u.email}</div>
+                        </div>
                       </div>
-                      <span>{u.display_name}</span>
                     </td>
-                    <td className="py-3.5 px-4 font-mono text-slate-300">{u.email}</td>
                     <td className="py-3.5 px-4">
-                      <span className={`px-2 py-0.5 rounded font-semibold uppercase ${ROLE_STYLE[u.role]}`}>
-                        {u.role}
-                      </span>
+                      <span className={`px-2 py-0.5 rounded font-semibold uppercase ${ROLE_STYLE[u.role]}`}>{u.role}</span>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-400">
-                      <span className="uppercase">{u.stream || '—'}</span>
-                      {u.department ? <span className="text-slate-500"> / {u.department}</span> : null}
+                    <td className="py-3.5 px-4">
+                      <div className="flex flex-wrap gap-1 max-w-[160px]">
+                        {(u.hod_streams || []).length ? (
+                          u.hod_streams!.map((s) => (
+                            <span key={s} className="px-1.5 py-0.5 rounded bg-violet-950 text-violet-300 uppercase text-[10px] font-bold">{s}</span>
+                          ))
+                        ) : (
+                          <span className="text-slate-600">—</span>
+                        )}
+                      </div>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-500">{formatDate(u.created_at)}</td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex flex-wrap gap-1 max-w-[260px]">
+                        {(u.faculty_assignments || []).slice(0, 4).map((a, i) => (
+                          <span key={i} className="px-1.5 py-0.5 rounded bg-slate-800 text-slate-300 text-[10px]" title={`${a.stream} • ${a.subject}`}>
+                            {a.subject} <span className="text-slate-500">(S{a.semester}/{a.section})</span>
+                          </span>
+                        ))}
+                        {(u.faculty_assignments || []).length > 4 && (
+                          <span className="text-slate-500 text-[10px]">+{(u.faculty_assignments || []).length - 4} more</span>
+                        )}
+                        {(u.faculty_assignments || []).length === 0 && <span className="text-slate-600">—</span>}
+                      </div>
+                    </td>
                     <td className="py-3.5 px-4 text-right">
                       <div className="flex items-center justify-end gap-1.5">
-                        <button
-                          onClick={() => openEdit(u)}
-                          className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors"
-                          title="Edit"
-                        >
+                        <button onClick={() => openEdit(u)} className="p-1.5 hover:bg-slate-800 text-slate-300 hover:text-white rounded-lg transition-colors" title="Edit">
                           <Pencil className="w-4 h-4" />
                         </button>
                         <button
-                          onClick={() => {
-                            setResetTarget(u);
-                            setNewPassword('');
-                          }}
+                          onClick={() => { setResetTarget(u); setNewPassword(''); }}
                           className="p-1.5 hover:bg-amber-950/60 text-slate-400 hover:text-amber-400 rounded-lg transition-colors"
                           title="Reset password"
                         >
                           <KeyRound className="w-4 h-4" />
                         </button>
-                        <button
-                          onClick={() => handleDelete(u)}
-                          className="p-1.5 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 rounded-lg transition-colors"
-                          title="Delete"
-                        >
+                        <button onClick={() => handleDelete(u)} className="p-1.5 hover:bg-rose-950/60 text-slate-400 hover:text-rose-400 rounded-lg transition-colors" title="Delete">
                           <Trash2 className="w-4 h-4" />
                         </button>
                       </div>
@@ -287,124 +356,118 @@ export default function ManageFacultyPage() {
       {/* Create / Edit Modal */}
       {showModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-950/70 backdrop-blur-sm animate-in fade-in">
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-lg w-full shadow-2xl">
-            <div className="flex items-center justify-between mb-4">
+          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-2xl w-full shadow-2xl max-h-[90vh] overflow-y-auto">
+            <div className="flex items-center justify-between mb-4 sticky top-0 bg-slate-900 pb-3 border-b border-slate-800">
               <div className="flex items-center gap-2.5">
                 <div className="p-2 bg-indigo-950 text-indigo-400 rounded-xl">
                   {editing ? <Pencil className="w-5 h-5" /> : <UserPlus className="w-5 h-5" />}
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">
-                    {editing ? 'Edit Faculty Account' : 'Add Faculty Account'}
-                  </h3>
-                  <p className="text-xs text-slate-400">
-                    {editing ? 'Update role and profile details.' : 'Provision a new dashboard user.'}
-                  </p>
+                  <h3 className="font-bold text-white text-base">{editing ? 'Edit Faculty Account' : 'Add Faculty Account'}</h3>
+                  <p className="text-xs text-slate-400">{editing ? 'Update role and assignments.' : 'Provision a new dashboard user.'}</p>
                 </div>
               </div>
-              <button onClick={() => setShowModal(false)} className="p-1 text-slate-400 hover:text-white">
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setShowModal(false)} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
 
-            <form onSubmit={submit} className="space-y-4">
-              {!editing && (
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Email</label>
-                    <input
-                      type="email"
-                      required
-                      value={form.email}
-                      onChange={(e) => setForm({ ...form, email: e.target.value })}
-                      placeholder="faculty@university.edu"
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
-                      Initial Password <span className="text-rose-400">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      minLength={6}
-                      value={form.password}
-                      onChange={(e) => setForm({ ...form, password: e.target.value })}
-                      placeholder="min 6 chars"
-                      className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                    />
-                  </div>
+            <form onSubmit={submit} className="space-y-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Display Name</label>
+                  <input type="text" required value={form.displayName} onChange={(e) => setForm({ ...form, displayName: e.target.value })} placeholder="Dr. Jane Smith" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none" />
                 </div>
-              )}
-
-              <div>
-                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Display Name</label>
-                <input
-                  type="text"
-                  required
-                  value={form.displayName}
-                  onChange={(e) => setForm({ ...form, displayName: e.target.value })}
-                  placeholder="e.g. Dr. Jane Smith"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                />
-              </div>
-
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Role</label>
-                  <select
-                    value={form.role}
-                    onChange={(e) => setForm({ ...form, role: e.target.value as Role })}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                  >
+                  <select value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as Role })} className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none">
                     <option value="faculty">Faculty</option>
                     <option value="hod">HOD</option>
                     <option value="admin">Admin</option>
                   </select>
                 </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Stream</label>
-                  <input
-                    type="text"
-                    value={form.stream}
-                    onChange={(e) => setForm({ ...form, stream: e.target.value })}
-                    placeholder="e.g. cse"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                  />
-                </div>
+                {!editing && (
+                  <>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Email</label>
+                      <input type="email" required value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="faculty@university.edu" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none" />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Initial Password <span className="text-rose-400">*</span></label>
+                      <input type="text" required minLength={6} value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="min 6 chars" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500/30 outline-none" />
+                    </div>
+                  </>
+                )}
                 <div>
                   <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Department</label>
-                  <input
-                    type="text"
-                    value={form.department}
-                    onChange={(e) => setForm({ ...form, department: e.target.value })}
-                    placeholder="e.g. CSE"
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                  />
+                  <input type="text" value={form.department} onChange={(e) => setForm({ ...form, department: e.target.value })} placeholder="e.g. Computer Science" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none" />
+                </div>
+              </div>
+
+              {/* HOD streams (multi-select) */}
+              <div className="pt-4 border-t border-slate-800">
+                <p className="text-xs font-bold text-slate-300 uppercase tracking-wider mb-2">HOD of streams {form.role === 'hod' && <span className="text-violet-400 normal-case font-normal">(select all that apply)</span>}</p>
+                <div className="flex flex-wrap gap-2">
+                  {allStreams.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => toggleHodStream(s)}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-bold uppercase transition-all ${
+                        form.hodStreams.includes(s) ? 'bg-violet-600 text-white' : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Faculty teaching assignments */}
+              <div className="pt-4 border-t border-slate-800">
+                <div className="flex items-center justify-between mb-2">
+                  <p className="text-xs font-bold text-slate-300 uppercase tracking-wider">Teaching assignments (subject/sem/section)</p>
+                  <button type="button" onClick={addAssignment} className="flex items-center gap-1 px-2 py-1 bg-indigo-950 hover:bg-indigo-900 text-indigo-300 rounded-lg text-[11px] font-bold">
+                    <Plus className="w-3 h-3" /> Add
+                  </button>
+                </div>
+                <div className="space-y-2">
+                  {form.assignments.length === 0 && (
+                    <p className="text-[11px] text-slate-500">None yet. A user with no assignments + no HOD streams sees nothing.</p>
+                  )}
+                  {form.assignments.map((a, idx) => {
+                    const subjects = curriculum[a.stream]?.[a.semester] || [];
+                    return (
+                      <div key={idx} className="grid grid-cols-5 gap-2 items-center bg-slate-950 border border-slate-800 rounded-xl p-2">
+                        <select value={a.stream} onChange={(e) => updateAssignment(idx, 'stream', e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-white px-1.5 py-1 outline-none uppercase font-bold">
+                          {allStreams.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <select value={a.semester} onChange={(e) => updateAssignment(idx, 'semester', e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-white px-1.5 py-1 outline-none">
+                          {SEMS.map((s) => <option key={s} value={s}>Sem {s}</option>)}
+                        </select>
+                        <input list={`sec-${idx}`} value={a.section} onChange={(e) => updateAssignment(idx, 'section', e.target.value)} placeholder="section" className="bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-white px-1.5 py-1 outline-none uppercase" />
+                        <datalist id={`sec-${idx}`}>{filterSections.map((s) => <option key={s} value={s} />)}</datalist>
+                        <select value={a.subject} onChange={(e) => updateAssignment(idx, 'subject', e.target.value)} className="bg-slate-950 border border-slate-800 rounded-lg text-[11px] text-white px-1.5 py-1 outline-none truncate">
+                          <option value="General">General</option>
+                          {subjects.map((s) => <option key={s} value={s}>{s}</option>)}
+                        </select>
+                        <button type="button" onClick={() => removeAssignment(idx)} className="p-1 text-rose-400 hover:bg-rose-950/50 rounded-lg justify-self-end">
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
               {form.role === 'admin' && (
                 <div className="flex items-start gap-2 bg-indigo-950/40 border border-indigo-800/60 rounded-xl p-3 text-[11px] text-indigo-200/90">
                   <ShieldCheck className="w-4 h-4 flex-shrink-0 mt-0.5" />
-                  <span>Admins have full access across the platform, including faculty and curriculum management.</span>
+                  <span>Admins have full access across the platform (stream assignments optional).</span>
                 </div>
               )}
 
               <div className="flex gap-2 justify-end pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setShowModal(false)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40"
-                >
+                <button type="button" onClick={() => setShowModal(false)} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancel</button>
+                <button type="submit" disabled={submitting} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40">
                   {submitting ? 'Saving...' : editing ? 'Save Changes' : 'Create Account'}
                 </button>
               </div>
@@ -419,47 +482,22 @@ export default function ManageFacultyPage() {
           <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 max-w-md w-full shadow-2xl">
             <div className="flex items-center justify-between mb-4">
               <div className="flex items-center gap-2.5">
-                <div className="p-2 bg-amber-950 text-amber-400 rounded-xl">
-                  <KeyRound className="w-5 h-5" />
-                </div>
+                <div className="p-2 bg-amber-950 text-amber-400 rounded-xl"><KeyRound className="w-5 h-5" /></div>
                 <div>
                   <h3 className="font-bold text-white text-base">Reset Password</h3>
                   <p className="text-xs text-slate-400">{resetTarget.email}</p>
                 </div>
               </div>
-              <button
-                onClick={() => setResetTarget(null)}
-                className="p-1 text-slate-400 hover:text-white"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <button onClick={() => setResetTarget(null)} className="p-1 text-slate-400 hover:text-white"><X className="w-5 h-5" /></button>
             </div>
             <form onSubmit={submitReset} className="space-y-4">
               <div>
                 <label className="block text-xs font-bold text-slate-400 uppercase mb-1">New Password</label>
-                <input
-                  type="text"
-                  required
-                  minLength={6}
-                  value={newPassword}
-                  onChange={(e) => setNewPassword(e.target.value)}
-                  placeholder="min 6 chars"
-                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                />
+                <input type="text" required minLength={6} value={newPassword} onChange={(e) => setNewPassword(e.target.value)} placeholder="min 6 chars" className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500/30 outline-none" />
               </div>
               <div className="flex gap-2 justify-end pt-3 border-t border-slate-800">
-                <button
-                  type="button"
-                  onClick={() => setResetTarget(null)}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={submitting}
-                  className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40"
-                >
+                <button type="button" onClick={() => setResetTarget(null)} className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white">Cancel</button>
+                <button type="submit" disabled={submitting} className="px-5 py-2 bg-amber-600 hover:bg-amber-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40">
                   {submitting ? 'Resetting...' : 'Reset Password'}
                 </button>
               </div>

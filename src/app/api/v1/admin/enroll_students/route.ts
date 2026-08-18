@@ -31,9 +31,15 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: 'CSV data is required' }, { status: 400 });
     }
 
-    if (!initial_password || String(initial_password).trim().length < 6) {
+    // Default initial password (env-configurable, default 'student123').
+    const resolvedInitialPassword =
+      (initial_password && String(initial_password).trim()) ||
+      process.env.DEFAULT_STUDENT_PASSWORD ||
+      'student123';
+
+    if (resolvedInitialPassword.length < 6) {
       return NextResponse.json(
-        { detail: 'An initial password (min 6 chars) is required for the enrolled students.' },
+        { detail: 'Initial password (min 6 chars) is required for the enrolled students.' },
         { status: 400 }
       );
     }
@@ -51,7 +57,7 @@ export async function POST(req: NextRequest) {
     }
 
     const requiredFields = ['email', 'name', 'roll', 'stream', 'sem', 'section'] as const;
-    const batchPasswordHash = await hashPassword(String(initial_password).trim());
+    const batchPasswordHash = await hashPassword(resolvedInitialPassword);
 
     let enrolled = 0;
     let skipped = 0;

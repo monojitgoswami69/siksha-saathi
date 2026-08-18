@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, requireRole } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
-import { resolveScope } from '@/lib/server/analyticsScope';
+import { resolveScope, dashboardScopeClause } from '@/lib/server/analyticsScope';
 
 export async function GET(
   req: NextRequest,
@@ -21,41 +21,34 @@ export async function GET(
       'SELECT id, email, display_name, name, roll, stream, sem, section, avatar_url FROM student_users WHERE id = $1;',
       [uid]
     );
-
     if (studentRes.rowCount === 0) {
       return NextResponse.json({ detail: 'Student not found' }, { status: 404 });
     }
-
     const student = studentRes.rows[0] as any;
 
-    // Role privacy enforcement
-    if (scope.mode === 'stream' && scope.stream) {
-      if (student.stream && student.stream !== 'General' && student.stream.toLowerCase() !== scope.stream.toLowerCase()) {
-        return NextResponse.json(
-          { detail: 'Access denied: student is outside your stream.' },
-          { status: 403 }
-        );
-      }
-    } else if (scope.mode === 'faculty') {
-      // faculty may only view students who queried their materials
-      const touched = await query(
-        `SELECT 1 FROM query_citations qc
-         JOIN documents d ON d.id = qc.document_id
-         JOIN query_logs q ON q.id = qc.query_log_id
-         WHERE d.uploaded_by = $1 AND q.user_id = $2 LIMIT 1;`,
-        [scope.uid, uid]
+    // Privacy: a non-admin may only view a student within their scope
+    // (stream/sem/section covered by their assignments or hod streams).
+    if (scope.mode === 'assigned') {
+      const ssc = dashboardScopeClause(
+        { stream: 's.stream', semester: 's.sem', section: 's.section' },
+        scope,
+        1
       );
-      if (touched.rowCount === 0) {
+      const visible = await query(
+        `SELECT 1 FROM student_users s WHERE s.id = $1${ssc.sql} LIMIT 1;`,
+        [uid, ...ssc.params]
+      );
+      if (visible.rowCount === 0) {
         return NextResponse.json(
-          { detail: 'Access denied: this student has not interacted with your materials.' },
+          { detail: 'Access denied: this student is outside your scope.' },
           { status: 403 }
         );
       }
     }
 
-    // queries_by_subject (distinct queries per subject, from query_citations)
+    // queries_by_subject (from query_citations for this student)
     const qRes = await query(
-      'SELECT subject, COUNT(DISTINCT query_log_id)::int as count FROM query_citations WHERE subject = ANY (SELECT subject FROM query_logs WHERE user_id = $1) GROUP BY subject;',
+      'SELECT subject, COUNT(DISTINCT query_log_id)::int as count FROM query_citations WHERE query_log_id IN (SELECT id FROM query_logs WHERE user_id = $1) GROUP BY subject;',
       [uid]
     );
 

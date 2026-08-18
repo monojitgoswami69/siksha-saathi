@@ -78,24 +78,28 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: 'File or content text is required' }, { status: 400 });
     }
 
-    // Non-admin (hod/faculty) uploads are hard-scoped to their own stream.
+    // Non-admin (hod/faculty) uploads must target a stream they're allowed to
+    // teach in (their hod_streams ∪ faculty_assignment streams). No cross-stream.
     if (user.scope === 'dashboard' && user.role !== 'admin') {
-      try {
-        const profileRes = await query(
-          'SELECT stream FROM dashboard_users WHERE id = $1;',
-          [user.uid]
+      const { getAllowedStreams } = await import('@/lib/server/analyticsScope');
+      const allowed = await getAllowedStreams(user);
+      if (allowed.length === 0) {
+        return NextResponse.json(
+          { detail: 'You have no stream assignments. Contact the administrator.' },
+          { status: 403 }
         );
-        const ownStream = profileRes.rows[0]?.stream;
-        if (ownStream) {
-          stream = ownStream;
-        } else {
-          return NextResponse.json(
-            { detail: 'Your account is not associated with a stream. Contact the administrator.' },
-            { status: 403 }
-          );
-        }
-      } catch {
-        return NextResponse.json({ detail: 'Could not verify your stream scope.' }, { status: 500 });
+      }
+      if (stream === 'General' || !stream) {
+        return NextResponse.json(
+          { detail: 'Please choose a specific stream you teach (General is admin-only).' },
+          { status: 400 }
+        );
+      }
+      if (!allowed.map((s) => s.toLowerCase()).includes(stream.toLowerCase())) {
+        return NextResponse.json(
+          { detail: `You are not assigned to the "${stream}" stream.` },
+          { status: 403 }
+        );
       }
     }
 

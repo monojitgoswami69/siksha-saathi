@@ -75,6 +75,8 @@ async function reset() {
       'quiz_results',
       'chat_messages',
       'chat_sessions',
+      'faculty_assignments',
+      'hod_streams',
       'document_chunks',
       'documents',
       'student_users',

@@ -11,12 +11,10 @@ export default function UserSettingsPage() {
   const { showSuccess, showError } = useToast();
 
   const [displayName, setDisplayName] = useState(user?.displayName || '');
-  const [stream, setStream] = useState(user?.stream || 'cse');
+  const [department, setDepartment] = useState(user?.department || '');
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
-
-  const isNonAdmin = user?.role && user.role !== 'admin';
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -24,11 +22,8 @@ export default function UserSettingsPage() {
     try {
       const payload: any = {
         displayName: displayName.trim(),
+        department: department.trim(),
       };
-      // Only admins may self-edit stream here (route also enforces this).
-      if (!isNonAdmin) {
-        payload.stream = stream.trim();
-      }
 
       if (newPassword) {
         if (!currentPassword) {
@@ -90,19 +85,17 @@ export default function UserSettingsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
-                Department / Stream {isNonAdmin && <span className="text-slate-600 normal-case font-normal">(admin-managed)</span>}
-              </label>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Department</label>
               <div className="relative">
                 <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                 <input
                   type="text"
-                  value={stream}
-                  onChange={(e) => setStream(e.target.value)}
-                  disabled={!!isNonAdmin}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase focus:ring-2 focus:ring-indigo-500/30 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
+                  value={department}
+                  onChange={(e) => setDepartment(e.target.value)}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
                 />
               </div>
+              <p className="text-[10px] text-slate-500 mt-1">Stream & teaching assignments are managed by an admin via Manage Faculty.</p>
             </div>
           </div>
 

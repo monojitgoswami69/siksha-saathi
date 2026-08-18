@@ -15,20 +15,67 @@ import {
 import { relations, sql } from 'drizzle-orm';
 
 /**
- * 1. Dashboard Users (Admin, HOD, Faculty, Assistant)
+ * 1. Dashboard Users (Admin, HOD, Faculty)
  */
 export const dashboardUsers = pgTable('dashboard_users', {
   id: uuid('id').defaultRandom().primaryKey(),
   email: varchar('email', { length: 255 }).notNull().unique(),
   passwordHash: varchar('password_hash', { length: 255 }).notNull(),
+  googleId: varchar('google_id', { length: 255 }).unique(),
   role: varchar('role', { length: 50 }).notNull().default('faculty'),
   displayName: varchar('display_name', { length: 255 }),
+  avatarUrl: varchar('avatar_url', { length: 500 }),
   stream: varchar('stream', { length: 100 }),
   department: varchar('department', { length: 100 }),
   organizationName: varchar('organization_name', { length: 255 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
+
+/**
+ * 1b. HOD stream assignments — a user can be HOD of MULTIPLE streams.
+ */
+export const hodStreams = pgTable(
+  'hod_streams',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .references(() => dashboardUsers.id, { onDelete: 'cascade' })
+      .notNull(),
+    stream: varchar('stream', { length: 100 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    unique('hod_streams_user_stream_key').on(t.userId, t.stream),
+    index('idx_hod_streams_user').on(t.userId),
+  ]
+);
+
+/**
+ * 1c. Faculty teaching assignments — arbitrary (stream, semester, section,
+ * subject) combos a user teaches. A user can teach the same subject across
+ * multiple batches, multiple subjects in the same batch, multiple semesters,
+ * etc. Also used by HODs who additionally teach.
+ */
+export const facultyAssignments = pgTable(
+  'faculty_assignments',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    userId: uuid('user_id')
+      .references(() => dashboardUsers.id, { onDelete: 'cascade' })
+      .notNull(),
+    stream: varchar('stream', { length: 100 }).notNull(),
+    semester: varchar('semester', { length: 20 }).notNull(),
+    section: varchar('section', { length: 50 }).notNull(),
+    subject: varchar('subject', { length: 200 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (t) => [
+    index('idx_faculty_assignments_user').on(t.userId),
+    index('idx_faculty_assignments_scope').on(t.stream, t.semester, t.section, t.subject),
+    unique('faculty_assignments_user_scope_key').on(t.userId, t.stream, t.semester, t.section, t.subject),
+  ]
+);
 
 /**
  * 2. Student Users (Auth + Academic Profile)
@@ -183,6 +230,7 @@ export const curriculum = pgTable(
     stream: varchar('stream', { length: 100 }).notNull(),
     semester: varchar('semester', { length: 20 }).notNull(),
     subjects: jsonb('subjects').notNull().default('[]'),
+    sections: jsonb('sections').notNull().default('[]'),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
     updatedBy: uuid('updated_by'),
   },

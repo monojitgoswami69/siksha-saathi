@@ -16,13 +16,18 @@ export async function GET(req: NextRequest) {
       );
       if (dbRes.rowCount === 0) return NextResponse.json({ detail: 'User not found' }, { status: 404 });
       const row = dbRes.rows[0];
+      // Resolve allowed streams (hod_streams ∪ faculty_assignment streams)
+      const { getAllowedStreams } = await import('@/lib/server/analyticsScope');
+      const allowedStreams = await getAllowedStreams(user);
       return NextResponse.json({
         uid: row.id,
         email: row.email,
         role: row.role,
         display_name: row.display_name,
         stream: row.stream,
+        allowed_streams: allowedStreams,
         organization_name: row.organization_name,
+        department: row.department,
         scope: 'dashboard',
       });
     } else {

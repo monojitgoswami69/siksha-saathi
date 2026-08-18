@@ -7,7 +7,7 @@ export async function GET(req: NextRequest) {
     const stream = searchParams.get('stream');
     const semester = searchParams.get('semester');
 
-    let sql = 'SELECT stream, semester, subjects, updated_at FROM curriculum WHERE 1=1';
+    let sql = 'SELECT stream, semester, subjects, sections, updated_at FROM curriculum WHERE 1=1';
     const params: any[] = [];
     let pIdx = 1;
 

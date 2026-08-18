@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, requireRole } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
-import { resolveScope, queryLogScopeClause } from '@/lib/server/analyticsScope';
+import { resolveScope, dashboardScopeClause } from '@/lib/server/analyticsScope';
 
 export async function GET(req: NextRequest) {
   try {
@@ -12,9 +12,8 @@ export async function GET(req: NextRequest) {
     }
 
     const scope = await resolveScope(user);
-    const sc = queryLogScopeClause(scope, 2); // params start at 2 (1 = date)
 
-    // 1. Weekly data (role-scoped query counts)
+    // 1. Weekly data (query_logs scoped)
     const weeklyData: Array<{ date: string; queries: number }> = [];
     const now = new Date();
     for (let i = 6; i >= 0; i--) {
@@ -22,11 +21,15 @@ export async function GET(req: NextRequest) {
       d.setDate(d.getDate() - i);
       const dateStr = d.toISOString().split('T')[0];
       const displayDate = `${d.getDate().toString().padStart(2, '0')}/${(d.getMonth() + 1).toString().padStart(2, '0')}`;
+      const wsc = dashboardScopeClause(
+        { stream: 'q.stream', semester: 'q.semester', section: 'q.section', subject: 'q.subject' },
+        scope,
+        2
+      );
       const res = await query(
         `SELECT COUNT(*)::int as count FROM query_logs q
-         WHERE q.created_at >= $1::timestamp
-           AND q.created_at < ($1::timestamp + INTERVAL '1 day')${sc.sql};`,
-        [dateStr, ...sc.params]
+         WHERE q.created_at >= $1::timestamp AND q.created_at < ($1::timestamp + INTERVAL '1 day')${wsc.sql};`,
+        [dateStr, ...wsc.params]
       );
       weeklyData.push({ date: displayDate, queries: res.rows[0]?.count || 0 });
     }
@@ -35,12 +38,16 @@ export async function GET(req: NextRequest) {
     let activitySql = `SELECT id, action, target_type, user_email as actor, details as meta, created_at as timestamp
        FROM audit_logs WHERE 1=1`;
     const actParams: any[] = [];
-    if (scope.mode === 'stream' && scope.stream) {
-      activitySql += ` AND (details->>'stream' = $1 OR user_id = $2 OR user_email = $3)`;
-      actParams.push(scope.stream, scope.uid, user.email);
-    } else if (scope.mode === 'faculty') {
-      activitySql += ` AND (user_id = $1 OR user_email = $2)`;
-      actParams.push(scope.uid, user.email);
+    if (scope.mode === 'assigned') {
+      // HOD/faculty see their own actions + actions on materials in their scope
+      // (details->>'stream' in their hod streams, or uploaded by them).
+      const streamList = scope.hodStreams.length ? scope.hodStreams : ['__none__'];
+      activitySql += ` AND (
+        user_id = $1
+        OR details->>'stream' = ANY($2::text[])
+        OR (details->>'uploaded_by') = $1
+      )`;
+      actParams.push(scope.uid, streamList);
     }
     activitySql += ` ORDER BY created_at DESC LIMIT 20;`;
     const auditRes = await query(activitySql, actParams);

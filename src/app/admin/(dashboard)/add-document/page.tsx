@@ -22,7 +22,7 @@ export default function AddDocumentPage() {
   const router = useRouter();
   const { showSuccess, showError } = useToast();
   const { user } = useAdminAuth();
-  const isScopedRole = user?.role && user.role !== 'admin'; // hod/faculty locked to their stream
+  const isScopedRole = user?.role && user.role !== 'admin'; // hod/faculty restricted to their streams
 
   const [files, setFiles] = useState<File[]>([]);
   const [stream, setStream] = useState('cse');
@@ -54,14 +54,21 @@ export default function AddDocumentPage() {
       .catch(() => {});
   }, []);
 
-  // Non-admins (hod/faculty) are hard-locked to their own stream (server-enforced too).
-  useEffect(() => {
-    if (isScopedRole && user?.stream) {
-      setStream(user.stream);
-    }
-  }, [isScopedRole, user?.stream]);
-
   const streamsForSelection = filterStreams.length ? filterStreams : Object.keys(curriculum);
+
+  // Non-admins (hod/faculty) may only upload into streams they're assigned to
+  // (hod_streams ∪ faculty_assignment streams). Server enforces this too.
+  const allowedStreams = (user?.allowed_streams && user.allowed_streams.length > 0)
+    ? user.allowed_streams
+    : streamsForSelection;
+  const streamsForRole = isScopedRole ? allowedStreams : streamsForSelection;
+
+  useEffect(() => {
+    if (isScopedRole && allowedStreams.length > 0) {
+      setStream((prev) => (allowedStreams.map((s) => s.toLowerCase()).includes(prev.toLowerCase()) ? prev : allowedStreams[0]));
+    }
+  }, [isScopedRole, allowedStreams.length]);
+
   const subjectsForSelection = curriculum[stream]?.[semester] || [
     'Data Structures',
     'Operating Systems',
@@ -151,11 +158,11 @@ export default function AddDocumentPage() {
             <select
               value={stream}
               onChange={(e) => setStream(e.target.value)}
-              disabled={!!isScopedRole}
+              disabled={!!isScopedRole && allowedStreams.length <= 1}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             >
               {!isScopedRole && <option value="General">General (all streams)</option>}
-              {streamsForSelection.map((s) => (
+              {streamsForRole.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>

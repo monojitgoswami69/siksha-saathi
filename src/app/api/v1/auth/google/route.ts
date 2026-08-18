@@ -1,11 +1,25 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { query } from '@/lib/server/db';
-import { verifyGoogleIdToken, createAccessToken, STUDENT_COOKIE_NAME, getCookieOptions } from '@/lib/server/auth';
+import {
+  verifyGoogleIdToken,
+  createAccessToken,
+  STUDENT_COOKIE_NAME,
+  ADMIN_COOKIE_NAME,
+  getCookieOptions,
+} from '@/lib/server/auth';
+import { logAudit } from '@/lib/server/audit';
 
+/**
+ * Google OAuth login for BOTH students and dashboard users.
+ * Body: { idToken?, accessToken?, scope?: 'student' | 'dashboard' }
+ *
+ * No auto-provisioning: the email MUST already exist in the relevant table
+ * (admin-enrolled). On first Google login we link google_id + avatar.
+ */
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
-    const { idToken, accessToken } = body;
+    const { idToken, accessToken, scope } = body;
 
     if (!idToken && !accessToken) {
       return NextResponse.json(
@@ -20,31 +34,25 @@ export async function POST(req: NextRequest) {
     let picture: string | null = null;
 
     if (accessToken) {
-      // 1. Verify via Google OAuth2 UserInfo API
       const userinfoRes = await fetch('https://www.googleapis.com/oauth2/v3/userinfo', {
         headers: { Authorization: `Bearer ${accessToken}` },
       });
-
       if (!userinfoRes.ok) {
         return NextResponse.json({ detail: 'Invalid Google access token' }, { status: 401 });
       }
-
       const userInfo = await userinfoRes.json();
       if (!userInfo.email) {
         return NextResponse.json({ detail: 'Google account missing email address' }, { status: 400 });
       }
-
       googleId = userInfo.sub;
       email = userInfo.email;
       name = userInfo.name || email.split('@')[0];
       picture = userInfo.picture || null;
     } else if (idToken) {
-      // 2. Verify via Google ID Token (GSI JWT)
       const verified = await verifyGoogleIdToken(idToken);
       if (!verified) {
         return NextResponse.json({ detail: 'Invalid Google authentication token' }, { status: 401 });
       }
-
       googleId = verified.googleId;
       email = verified.email;
       name = verified.name;
@@ -52,24 +60,72 @@ export async function POST(req: NextRequest) {
     }
 
     const cleanEmail = email.toLowerCase();
+    const isDashboard = scope === 'dashboard';
 
-    // Students can ONLY log in if their email was pre-enrolled by an admin.
-    // No self-registration / auto-provisioning.
+    if (isDashboard) {
+      // ---- Dashboard user (admin / hod / faculty) ----
+      let res = await query(
+        'SELECT * FROM dashboard_users WHERE email = $1 OR google_id = $2;',
+        [cleanEmail, googleId]
+      );
+      if (res.rowCount === 0) {
+        return NextResponse.json(
+          { detail: 'Your email is not enrolled as a faculty/admin. Please contact your administrator.' },
+          { status: 403 }
+        );
+      }
+      const du = res.rows[0] as any;
+      if (!du.google_id || !du.avatar_url) {
+        await query(
+          'UPDATE dashboard_users SET google_id = COALESCE(google_id, $1), avatar_url = COALESCE(avatar_url, $2) WHERE id = $3;',
+          [googleId, picture, du.id]
+        );
+      }
+
+      const token = await createAccessToken({
+        uid: du.id,
+        email: du.email,
+        role: du.role,
+        scope: 'dashboard',
+        displayName: du.display_name,
+      });
+
+      await logAudit({
+        userId: du.id,
+        userEmail: du.email,
+        role: du.role,
+        action: 'auth.google.login',
+        targetType: 'dashboard_user',
+        details: { scope: 'dashboard' },
+      });
+
+      const response = NextResponse.json({
+        uid: du.id,
+        email: du.email,
+        role: du.role,
+        display_name: du.display_name,
+        avatar_url: du.avatar_url || picture,
+        scope: 'dashboard',
+        access_token: token,
+        token,
+        token_type: 'bearer',
+      });
+      response.cookies.set(ADMIN_COOKIE_NAME, token, getCookieOptions());
+      return response;
+    }
+
+    // ---- Student ----
     let studentRes = await query(
       'SELECT * FROM student_users WHERE email = $1 OR google_id = $2;',
       [cleanEmail, googleId]
     );
-
     if (studentRes.rowCount === 0) {
       return NextResponse.json(
         { detail: 'Your email is not enrolled. Please contact your administrator to get access.' },
         { status: 403 }
       );
     }
-
     const student = studentRes.rows[0];
-
-    // Link google_id and avatar if missing (no profile/academic changes)
     if (!student.google_id || !student.avatar_url) {
       await query(
         'UPDATE student_users SET google_id = COALESCE(google_id, $1), avatar_url = COALESCE(avatar_url, $2) WHERE id = $3;',
@@ -100,7 +156,6 @@ export async function POST(req: NextRequest) {
       token,
       token_type: 'bearer',
     });
-
     response.cookies.set(STUDENT_COOKIE_NAME, token, getCookieOptions());
     return response;
   } catch (err: any) {

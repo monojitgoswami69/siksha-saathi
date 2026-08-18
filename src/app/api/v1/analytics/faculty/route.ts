@@ -13,42 +13,55 @@ export async function GET(req: NextRequest) {
 
     const scope = await resolveScope(user);
 
-    // Per-faculty totals: docs owned, distinct queries touching their materials
+    // Visible faculty:
+    //  - admin: all
+    //  - hod:   faculty who teach in / are HOD of any of the user's hod_streams
+    //           (or share no stream — limited to their stream's faculty)
+    //  - faculty: self only
     const params: any[] = [];
-    let whereClause = `WHERE u.role IN ('hod', 'faculty', 'admin')`;
-    if (scope.mode === 'stream' && scope.stream) {
-      whereClause += ` AND (u.stream = $1 OR u.stream IS NULL)`;
-      params.push(scope.stream);
-    } else if (scope.mode === 'faculty') {
-      whereClause = `WHERE u.id = $1`;
-      params.push(scope.uid);
+    let whereClause = `WHERE u.role IN ('hod', 'faculty')`;
+    if (scope.mode === 'assigned') {
+      const myStreams = scope.hodStreams.length ? scope.hodStreams : ['__none__'];
+      // Visible = self, OR users who have an assignment/hod_stream in one of my streams
+      whereClause = `WHERE (
+        u.id = $1
+        OR EXISTS (SELECT 1 FROM hod_streams hs WHERE hs.user_id = u.id AND hs.stream = ANY($2::text[]))
+        OR EXISTS (SELECT 1 FROM faculty_assignments fa WHERE fa.user_id = u.id AND fa.stream = ANY($2::text[]))
+      )`;
+      params.push(scope.uid, myStreams);
     }
 
     const mainRes = await query(
-      `SELECT u.id, u.email, u.display_name, u.stream, u.department,
-              COUNT(DISTINCT d.id)::int as doc_count,
-              COUNT(DISTINCT qc.query_log_id)::int as total_queries,
-              ARRAY_AGG(DISTINCT d.subject) FILTER (WHERE d.subject IS NOT NULL) as subjects,
-              ARRAY_AGG(DISTINCT d.semester) FILTER (WHERE d.semester IS NOT NULL) as semesters,
-              ARRAY_AGG(DISTINCT d.section) FILTER (WHERE d.section IS NOT NULL) as sections
+      `SELECT u.id, u.email, u.role, u.display_name, u.stream, u.department,
+              COALESCE(
+                (SELECT array_agg(s.stream ORDER BY s.stream) FROM hod_streams s WHERE s.user_id = u.id),
+                '{}'::text[]
+              ) as hod_streams,
+              COALESCE(
+                (SELECT json_agg(json_build_object('stream', fa.stream, 'semester', fa.semester, 'section', fa.section, 'subject', fa.subject))
+                 FROM faculty_assignments fa WHERE fa.user_id = u.id),
+                '[]'::json
+              ) as faculty_assignments,
+              (SELECT COUNT(DISTINCT d.id) FROM documents d WHERE d.uploaded_by = u.id)::int as doc_count,
+              (SELECT COUNT(DISTINCT qc.query_log_id)
+               FROM query_citations qc
+               JOIN documents d ON d.id = qc.document_id
+               WHERE d.uploaded_by = u.id)::int as total_queries
        FROM dashboard_users u
-       LEFT JOIN documents d ON d.uploaded_by = u.id
-       LEFT JOIN query_citations qc ON qc.document_id = d.id
        ${whereClause}
-       GROUP BY u.id, u.email, u.display_name, u.stream, u.department
        ORDER BY total_queries DESC NULLS LAST;`,
       params
     );
 
-    // Per-faculty per-subject heatmap (distinct queries)
+    // Per-faculty per-subject heatmap
+    let subjWhere = `WHERE du.role IN ('hod', 'faculty')`;
     const subjParams: any[] = [];
-    let subjWhere = `WHERE du.role IN ('hod', 'faculty', 'admin')`;
-    if (scope.mode === 'stream' && scope.stream) {
-      subjWhere += ` AND (du.stream = $1 OR du.stream IS NULL)`;
-      subjParams.push(scope.stream);
-    } else if (scope.mode === 'faculty') {
-      subjWhere = `WHERE du.id = $1`;
-      subjParams.push(scope.uid);
+    if (scope.mode === 'assigned') {
+      const myStreams = scope.hodStreams.length ? scope.hodStreams : ['__none__'];
+      subjWhere = `WHERE (du.id = $1 OR EXISTS (
+        SELECT 1 FROM faculty_assignments fa2 WHERE fa2.user_id = du.id AND fa2.stream = ANY($2::text[])
+      ) OR EXISTS (SELECT 1 FROM hod_streams hs2 WHERE hs2.user_id = du.id AND hs2.stream = ANY($2::text[])))`;
+      subjParams.push(scope.uid, myStreams);
     }
     const subjRes = await query(
       `SELECT du.id as faculty_id, COALESCE(d.subject, 'General') as subject,
@@ -68,19 +81,24 @@ export async function GET(req: NextRequest) {
       subjectMap.set(r.faculty_id, arr);
     });
 
-    const faculty = mainRes.rows.map((r: any) => ({
-      uid: r.id,
-      email: r.email,
-      name: r.display_name,
-      stream: r.stream || '',
-      department: r.department || '',
-      doc_count: r.doc_count || 0,
-      total_queries: r.total_queries || 0,
-      subjects: (r.subjects || []).filter(Boolean),
-      semesters: (r.semesters || []).filter(Boolean),
-      sections: (r.sections || []).filter(Boolean),
-      subject_heatmap: subjectMap.get(r.id) || [],
-    }));
+    const faculty = mainRes.rows.map((r: any) => {
+      const assignments = Array.isArray(r.faculty_assignments) ? r.faculty_assignments : [];
+      return {
+        uid: r.id,
+        email: r.email,
+        name: r.display_name,
+        role: r.role,
+        stream: r.stream || '',
+        department: r.department || '',
+        doc_count: r.doc_count || 0,
+        total_queries: r.total_queries || 0,
+        hod_streams: r.hod_streams || [],
+        subjects: Array.from(new Set(assignments.map((a: any) => a.subject).filter(Boolean))),
+        semesters: Array.from(new Set(assignments.map((a: any) => a.semester).filter(Boolean))),
+        sections: Array.from(new Set(assignments.map((a: any) => a.section).filter(Boolean))),
+        subject_heatmap: subjectMap.get(r.id) || [],
+      };
+    });
 
     return NextResponse.json({
       faculty,

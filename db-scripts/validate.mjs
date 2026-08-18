@@ -99,6 +99,8 @@ async function validate() {
     // 3. Tables & Row Counts Check
     const requiredTables = [
       'dashboard_users',
+      'hod_streams',
+      'faculty_assignments',
       'student_users',
       'documents',
       'document_chunks',

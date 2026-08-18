@@ -85,16 +85,70 @@ async function initSchema() {
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         email VARCHAR(255) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
+        google_id VARCHAR(255) UNIQUE,
         role VARCHAR(50) NOT NULL DEFAULT 'faculty',
         display_name VARCHAR(255),
+        avatar_url VARCHAR(500),
         stream VARCHAR(100),
         department VARCHAR(100),
         organization_name VARCHAR(255),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+      ALTER TABLE dashboard_users ADD COLUMN IF NOT EXISTS google_id VARCHAR(255) UNIQUE;
+      ALTER TABLE dashboard_users ADD COLUMN IF NOT EXISTS avatar_url VARCHAR(500);
     `);
     console.log('   ✅ Table: dashboard_users');
+
+    // 2b. HOD stream assignments (a user can be HOD of multiple streams)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS hod_streams (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID REFERENCES dashboard_users(id) ON DELETE CASCADE,
+        stream VARCHAR(100) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(user_id, stream)
+      );
+      CREATE INDEX IF NOT EXISTS idx_hod_streams_user ON hod_streams (user_id);
+    `);
+    console.log('   ✅ Table: hod_streams');
+
+    // 2c. Faculty teaching assignments (arbitrary stream/sem/section/subject combos)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS faculty_assignments (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        user_id UUID REFERENCES dashboard_users(id) ON DELETE CASCADE,
+        stream VARCHAR(100) NOT NULL,
+        semester VARCHAR(20) NOT NULL,
+        section VARCHAR(50) NOT NULL,
+        subject VARCHAR(200) NOT NULL,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        UNIQUE(user_id, stream, semester, section, subject)
+      );
+      CREATE INDEX IF NOT EXISTS idx_faculty_assignments_user ON faculty_assignments (user_id);
+      CREATE INDEX IF NOT EXISTS idx_faculty_assignments_scope ON faculty_assignments (stream, semester, section, subject);
+    `);
+    console.log('   ✅ Table: faculty_assignments');
+
+    // Backfill hod_streams / faculty_assignments from legacy single-stream +
+    // uploaded-documents data (one-time, idempotent).
+    await client.query(`
+      INSERT INTO hod_streams (user_id, stream)
+      SELECT id, stream FROM dashboard_users
+      WHERE role = 'hod' AND stream IS NOT NULL AND stream != ''
+      ON CONFLICT (user_id, stream) DO NOTHING;
+    `);
+    await client.query(`
+      INSERT INTO faculty_assignments (user_id, stream, semester, section, subject)
+      SELECT DISTINCT d.uploaded_by, d.stream, d.semester, d.section, d.subject
+      FROM documents d
+      WHERE d.uploaded_by IS NOT NULL
+        AND d.stream IS NOT NULL AND d.stream != 'General'
+        AND d.semester IS NOT NULL AND d.semester != 'General'
+        AND d.section IS NOT NULL AND d.section != 'General'
+        AND d.subject IS NOT NULL AND d.subject != 'General'
+      ON CONFLICT (user_id, stream, semester, section, subject) DO NOTHING;
+    `);
 
     // 3. Student Users
     await client.query(`
@@ -255,10 +309,12 @@ async function initSchema() {
         stream VARCHAR(100) NOT NULL,
         semester VARCHAR(20) NOT NULL,
         subjects JSONB NOT NULL DEFAULT '[]'::jsonb,
+        sections JSONB NOT NULL DEFAULT '[]'::jsonb,
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_by UUID,
         UNIQUE(stream, semester)
       );
+      ALTER TABLE curriculum ADD COLUMN IF NOT EXISTS sections JSONB NOT NULL DEFAULT '[]'::jsonb;
     `);
     console.log('   ✅ Table: curriculum');
 

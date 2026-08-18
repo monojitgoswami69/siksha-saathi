@@ -6,7 +6,9 @@ import { api } from '@/lib/client/api';
 
 interface AdminUser extends User {
   stream?: string;
+  allowed_streams?: string[];
   organization_name?: string;
+  department?: string;
 }
 
 interface AdminAuthContextValue {
@@ -14,6 +16,9 @@ interface AdminAuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  loginWithGoogle: (
+    credential: string | { idToken?: string; accessToken?: string }
+  ) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
   isAdmin: boolean;
   isFaculty: boolean;
@@ -36,7 +41,9 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           role: fresh.role,
           token: '',
           stream: fresh.stream,
+          allowed_streams: fresh.allowed_streams,
           organization_name: fresh.organization_name,
+          department: fresh.department,
         });
       } else {
         setUser(null);
@@ -62,13 +69,36 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         role: res.role,
         token: res.token || '',
         stream: res.stream,
+        allowed_streams: res.allowed_streams,
         organization_name: res.organization_name,
+        department: res.department,
       };
 
       setUser(adminData);
       return { success: true };
     } catch (err: any) {
       return { success: false, error: err.message || 'Login failed' };
+    }
+  };
+
+  const loginWithGoogle = async (
+    credential: string | { idToken?: string; accessToken?: string }
+  ) => {
+    try {
+      const res = await api.auth.googleAuth(
+        typeof credential === 'string' ? { idToken: credential, scope: 'dashboard' } : { ...credential, scope: 'dashboard' }
+      );
+      setUser({
+        uid: res.uid,
+        email: res.email,
+        displayName: res.display_name,
+        role: res.role,
+        token: res.access_token || res.token || '',
+        avatar_url: res.avatar_url,
+      });
+      return { success: true };
+    } catch (err: any) {
+      return { success: false, error: err.message || 'Google Sign-In failed' };
     }
   };
 
@@ -92,6 +122,7 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         isAuthenticated: !!user,
         isLoading,
         login,
+        loginWithGoogle,
         logout,
         isAdmin,
         isFaculty,

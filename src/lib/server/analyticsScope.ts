@@ -1,109 +1,116 @@
 /**
- * Role-based analytics scoping.
+ * Role-based analytics scoping — multi-assignment model.
  *
- *  - admin   : sees everything (no filter)
- *  - hod     : scoped to their stream (dashboard_users.stream)
- *  - faculty : scoped to the documents THEY uploaded (what they teach)
+ * A dashboard user's data access is the UNION of:
+ *  - their HOD stream grants (full access to every semester/section/subject
+ *    in those streams), from `hod_streams`; AND
+ *  - their faculty teaching assignments (specific stream/semester/section/
+ *    subject combos) from `faculty_assignments`.
  *
- * The JWT does not carry stream, so HOD/faculty scope is resolved from
- * dashboard_users at request time. This guarantees no cross-stream leakage.
+ *  - admin   : no filter (everything)
+ *  - hod     : hod_streams (multi) + faculty_assignments (they may also teach)
+ *  - faculty : faculty_assignments only
+ *
+ * The JWT carries no stream — scope is resolved from the assignment tables at
+ * request time, so it cannot be tampered with. `document_id` filters are still
+ * AND-ed with scope in every retrieval route (no bypass).
  */
 import { TokenPayload } from './auth';
-import { getDashboardProfile } from './auth';
+import { query } from './db';
 
-export type ScopeMode = 'all' | 'stream' | 'faculty';
+export interface FacultyAssignment {
+  stream: string;
+  semester: string;
+  section: string;
+  subject: string;
+}
 
 export interface ResolvedScope {
-  mode: ScopeMode;
-  stream: string | null;
+  mode: 'all' | 'assigned';
   uid: string;
+  hodStreams: string[];
+  assignments: FacultyAssignment[];
 }
 
 export async function resolveScope(user: TokenPayload): Promise<ResolvedScope> {
   if (user.role === 'admin') {
-    return { mode: 'all', stream: null, uid: user.uid };
+    return { mode: 'all', uid: user.uid, hodStreams: [], assignments: [] };
   }
-  if (user.role === 'faculty') {
-    return { mode: 'faculty', stream: null, uid: user.uid };
+  const [hodRes, faRes] = await Promise.all([
+    query<{ stream: string }>('SELECT stream FROM hod_streams WHERE user_id = $1;', [user.uid]),
+    query<{ stream: string; semester: string; section: string; subject: string }>(
+      'SELECT stream, semester, section, subject FROM faculty_assignments WHERE user_id = $1;',
+      [user.uid]
+    ),
+  ]);
+  const hodStreams = (hodRes.rows || []).map((r) => r.stream).filter(Boolean);
+  const assignments = (faRes.rows || []) as FacultyAssignment[];
+  // If a user has no assignments at all, fall back to their legacy single
+  // stream column (defensive — shouldn't happen after backfill).
+  if (hodStreams.length === 0 && assignments.length === 0) {
+    try {
+      const p = await query<{ stream: string }>(
+        'SELECT stream FROM dashboard_users WHERE id = $1;',
+        [user.uid]
+      );
+      const s = p.rows[0]?.stream;
+      if (s) return { mode: 'assigned', uid: user.uid, hodStreams: [s], assignments: [] };
+    } catch {}
   }
-  // hod (and any other dashboard role) -> stream scope
-  const profile = await getDashboardProfile(user.uid);
-  return { mode: profile.stream ? 'stream' : 'all', stream: profile.stream, uid: user.uid };
+  return { mode: 'assigned', uid: user.uid, hodStreams, assignments };
 }
 
 /**
- * SQL fragment to scope a query_logs-based aggregation (alias `q`).
- * Returns { sql, params } where `sql` is an AND-able clause (empty for 'all').
+ * The set of streams a dashboard user may upload into (for ingest validation).
  */
-export function queryLogScopeClause(
-  scope: ResolvedScope,
-  startIdx: number
-): { sql: string; params: any[]; nextIdx: number } {
-  if (scope.mode === 'stream' && scope.stream) {
-    return {
-      sql: ` AND (q.stream = $${startIdx} OR q.stream = 'General' OR q.stream IS NULL)`,
-      params: [scope.stream],
-      nextIdx: startIdx + 1,
-    };
-  }
-  if (scope.mode === 'faculty') {
-    return {
-      sql: ` AND EXISTS (
-        SELECT 1 FROM query_citations qc
-        JOIN documents d ON d.id = qc.document_id
-        WHERE qc.query_log_id = q.id AND d.uploaded_by = $${startIdx}
-      )`,
-      params: [scope.uid],
-      nextIdx: startIdx + 1,
-    };
-  }
-  return { sql: '', params: [], nextIdx: startIdx };
+export async function getAllowedStreams(user: TokenPayload): Promise<string[]> {
+  if (user.role === 'admin') return []; // admin = all
+  const scope = await resolveScope(user);
+  const set = new Set<string>(scope.hodStreams);
+  scope.assignments.forEach((a) => set.add(a.stream));
+  return [...set];
 }
 
 /**
- * SQL fragment to scope a query_citations-based aggregation (alias `qc`).
+ * SQL fragment that scopes an aggregation by the user's assignments.
+ *
+ * `cols` are the qualified column expressions for the surrounding table
+ * (e.g. { stream:'q.stream', semester:'q.semester', section:'q.section', subject:'q.subject' }).
+ * If `subject` is omitted (e.g. student_users has no subject), the subject
+ * condition is dropped from the EXISTS.
+ *
+ * Returns { sql, params } where `sql` is an AND-able clause (empty for admin).
+ * Params: [hodStreams text[], uid]. Per-dimension General wildcards keep
+ * General-scoped materials visible.
  */
-export function citationScopeClause(
+export function dashboardScopeClause(
+  cols: { stream: string; semester: string; section: string; subject?: string },
   scope: ResolvedScope,
   startIdx: number
 ): { sql: string; params: any[]; nextIdx: number } {
-  if (scope.mode === 'stream' && scope.stream) {
-    return {
-      sql: ` AND (qc.stream = $${startIdx} OR qc.stream = 'General' OR qc.stream IS NULL)`,
-      params: [scope.stream],
-      nextIdx: startIdx + 1,
-    };
-  }
-  if (scope.mode === 'faculty') {
-    return {
-      sql: ` AND qc.document_id IN (SELECT id FROM documents WHERE uploaded_by = $${startIdx})`,
-      params: [scope.uid],
-      nextIdx: startIdx + 1,
-    };
-  }
-  return { sql: '', params: [], nextIdx: startIdx };
+  if (scope.mode === 'all') return { sql: '', params: [], nextIdx: startIdx };
+
+  const streams = scope.hodStreams.length ? scope.hodStreams : ['__none__'];
+  const s = cols.stream;
+  const se = cols.semester;
+  const sec = cols.section;
+  const subj = cols.subject;
+
+  const subjectCond = subj
+    ? ` AND (LOWER(${subj}) = LOWER(fa.subject) OR ${subj} = 'General' OR ${subj} IS NULL)`
+    : '';
+
+  const sql =
+    ` AND (` +
+    `${s} = ANY($${startIdx}::text[]) OR ${s} = 'General' OR ${s} IS NULL` +
+    ` OR EXISTS (` +
+    `SELECT 1 FROM faculty_assignments fa WHERE fa.user_id = $${startIdx + 1}` +
+    ` AND (${s} = fa.stream OR ${s} = 'General' OR ${s} IS NULL)` +
+    ` AND (${se} = fa.semester OR ${se} = 'General' OR ${se} IS NULL)` +
+    ` AND (${sec} = fa.section OR ${sec} = 'General' OR ${sec} IS NULL)` +
+    subjectCond +
+    `)` +
+    `)`;
+  return { sql, params: [streams, scope.uid], nextIdx: startIdx + 2 };
 }
 
-/**
- * SQL fragment to scope a documents-based aggregation (alias `d`).
- */
-export function documentScopeClause(
-  scope: ResolvedScope,
-  startIdx: number
-): { sql: string; params: any[]; nextIdx: number } {
-  if (scope.mode === 'stream' && scope.stream) {
-    return {
-      sql: ` AND (d.stream = $${startIdx} OR d.stream = 'General' OR d.stream IS NULL)`,
-      params: [scope.stream],
-      nextIdx: startIdx + 1,
-    };
-  }
-  if (scope.mode === 'faculty') {
-    return {
-      sql: ` AND d.uploaded_by = $${startIdx}`,
-      params: [scope.uid],
-      nextIdx: startIdx + 1,
-    };
-  }
-  return { sql: '', params: [], nextIdx: startIdx };
-}

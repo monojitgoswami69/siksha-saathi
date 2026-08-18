@@ -11,14 +11,14 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, displayName, stream, currentPassword, newPassword } = body;
+    const { name, displayName, department, currentPassword, newPassword } = body;
 
-    // Students are NOT permitted to change academic identity fields
-    // (stream / sem / section / roll) to preserve inter-section privacy.
-    // Only display name and password are self-service editable.
-    if (user.scope === 'student' && (body.stream || body.sem || body.section || body.roll)) {
+    // Students + dashboard users: stream/role/section/subjects are admin-managed
+    // (Manage Faculty / CSV enrollment). Self-edit of scope is forbidden.
+    const scopeFields = ['stream', 'sem', 'section', 'roll', 'role'];
+    if (scopeFields.some((f) => body[f] !== undefined)) {
       return NextResponse.json(
-        { detail: 'Academic details (stream/semester/section/roll) cannot be self-edited. Contact your administrator.' },
+        { detail: 'Scope fields (stream/role/section/roll) are managed by an administrator.' },
         { status: 403 }
       );
     }
@@ -68,21 +68,14 @@ export async function PUT(req: NextRequest) {
         [displayName || name || null, name || null, user.uid]
       );
     } else {
-      // Dashboard users: stream/role/department are admin-managed (Manage Faculty).
-      // Non-admins must NOT self-reassign stream (would bypass role scoping).
-      if (user.role !== 'admin' && body.stream) {
-        return NextResponse.json(
-          { detail: 'Stream/role/department are managed by an administrator.' },
-          { status: 403 }
-        );
-      }
+      // Dashboard users: department is self-editable; stream/role are admin-managed.
       await query(
         `UPDATE dashboard_users
          SET display_name = COALESCE($1, display_name),
-             stream = COALESCE($2, stream),
+             department = COALESCE($2, department),
              updated_at = NOW()
          WHERE id = $3;`,
-        [displayName || name || null, user.role === 'admin' ? stream || null : null, user.uid]
+        [displayName || name || null, department || null, user.uid]
       );
     }
 

@@ -74,10 +74,14 @@ export const api = {
       request('/student/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
     adminLogin: (email: string, password: string) =>
       request('/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) }, 'admin'),
-    googleAuth: (payload: string | { idToken?: string; accessToken?: string }) =>
+    googleAuth: (
+      payload: string | { idToken?: string; accessToken?: string; scope?: 'student' | 'dashboard' }
+    ) =>
       request('/auth/google', {
         method: 'POST',
-        body: JSON.stringify(typeof payload === 'string' ? { idToken: payload } : payload),
+        body: JSON.stringify(
+          typeof payload === 'string' ? { idToken: payload } : payload
+        ),
       }),
     getMe: (scope: 'student' | 'admin' = 'student') =>
       request('/auth/me', { method: 'GET' }, scope),
@@ -194,24 +198,37 @@ export const api = {
       if (params.section) q.append('section', params.section);
       return request(`/students?${q.toString()}`, { method: 'GET' }, 'admin');
     },
+    createStudent: (data: {
+      email: string;
+      name: string;
+      roll: string;
+      stream: string;
+      sem: string;
+      section: string;
+      password: string;
+    }) => request('/students', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
+    resetStudentPassword: (uid: string, password?: string) =>
+      request(`/students/${uid}/password`, { method: 'POST', body: JSON.stringify({ password }) }, 'admin'),
     listFaculty: () => request('/admin/users', { method: 'GET' }, 'admin'),
     createFaculty: (data: {
       email: string;
       password: string;
       displayName: string;
       role: 'admin' | 'hod' | 'faculty';
-      stream?: string;
       department?: string;
       organizationName?: string;
+      hodStreams?: string[];
+      facultyAssignments?: Array<{ stream: string; semester: string; section: string; subject: string }>;
     }) => request('/admin/users', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
     updateFaculty: (
       uid: string,
       data: {
         displayName?: string;
         role?: 'admin' | 'hod' | 'faculty';
-        stream?: string;
         department?: string;
         organizationName?: string;
+        hodStreams?: string[];
+        facultyAssignments?: Array<{ stream: string; semester: string; section: string; subject: string }>;
       }
     ) => request(`/admin/users/${uid}`, { method: 'PATCH', body: JSON.stringify(data) }, 'admin'),
     resetFacultyPassword: (uid: string, password: string) =>
