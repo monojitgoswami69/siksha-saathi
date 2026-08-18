@@ -204,39 +204,9 @@ async function initSchema() {
     `);
     console.log('   ✅ Table: document_chunks');
 
-    // 5b. Document Images (image chunks: extracted/OCR'd images, citable & retrievable)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS document_images (
-        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-        document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
-        chunk_id UUID REFERENCES document_chunks(id) ON DELETE CASCADE,
-        page INT,
-        paragraph_id VARCHAR(100),
-        storage_provider VARCHAR(50) DEFAULT 'r2',
-        file_key VARCHAR(500),
-        preview_url VARCHAR(1000),
-        mime_type VARCHAR(100),
-        ocr_text TEXT,
-        file_name VARCHAR(255) NOT NULL,
-        stream VARCHAR(100),
-        semester VARCHAR(20),
-        section VARCHAR(50),
-        subject VARCHAR(200),
-        embedding vector(768),
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-      );
-      CREATE INDEX IF NOT EXISTS idx_doc_images_doc ON document_images (document_id);
-      CREATE INDEX IF NOT EXISTS idx_doc_images_chunk ON document_images (chunk_id);
-    `);
-    try {
-      await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_doc_images_embedding ON document_images
-        USING hnsw (embedding vector_cosine_ops);
-      `);
-    } catch (e) {
-      console.warn('   ⚠️ HNSW image index note:', e.message);
-    }
-    console.log('   ✅ Table: document_images');
+    // Drop the unused document_images table if it exists (image OCR text is
+    // stored as chunk_type='image' text chunks; no separate image asset table).
+    await client.query(`DROP TABLE IF EXISTS document_images CASCADE;`);
 
     // 6. Chat Sessions & Messages
     await client.query(`
@@ -376,11 +346,14 @@ async function initSchema() {
     }
 
     try {
+      // Use 'simple' config for language-agnostic (multilingual) tokenization
+      // so non-English content is also full-text searchable.
+      await client.query(`DROP INDEX IF EXISTS idx_chunks_fts;`);
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_chunks_fts ON document_chunks 
-        USING gin (to_tsvector('english', raw_content));
+        CREATE INDEX idx_chunks_fts ON document_chunks
+        USING gin (to_tsvector('simple', raw_content));
       `);
-      console.log('   ✅ Full-Text GIN Search Index: idx_chunks_fts');
+      console.log('   ✅ Full-Text GIN Search Index: idx_chunks_fts (simple/multilingual)');
     } catch (e) {
       console.warn('   ⚠️ GIN FTS index creation note:', e.message);
     }

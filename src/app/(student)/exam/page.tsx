@@ -13,7 +13,9 @@ export default function ExamPreparationPage() {
   const { showError } = useToast();
 
   const [subjects, setSubjects] = useState<string[]>([]);
+  const [files, setFiles] = useState<Array<{ document_id: string; file_name: string; title: string; subject?: string }>>([]);
   const [selectedSubject, setSelectedSubject] = useState<string>('All Subjects');
+  const [selectedFileId, setSelectedFileId] = useState<string>('');
   const [questionCount, setQuestionCount] = useState<number>(10);
   const [isGenerating, setIsGenerating] = useState(false);
 
@@ -72,10 +74,13 @@ export default function ExamPreparationPage() {
         api.quiz.history().catch(() => null),
       ]);
 
-      if (filterData && filterData.subjects?.length > 0) {
-        setSubjects(filterData.subjects);
-      } else {
-        setSubjects(['Data Structures', 'Operating Systems', 'Database Management', 'Algorithms']);
+      if (filterData) {
+        if (filterData.subjects?.length > 0) {
+          setSubjects(filterData.subjects);
+        } else {
+          setSubjects(['Data Structures', 'Operating Systems', 'Database Management', 'Algorithms']);
+        }
+        if (Array.isArray(filterData.files)) setFiles(filterData.files);
       }
 
       if (historyData) {
@@ -95,9 +100,13 @@ export default function ExamPreparationPage() {
   const handleGenerateTest = async () => {
     setIsGenerating(true);
     try {
+      const selectedFile = files.find((f) => f.document_id === selectedFileId);
       const quizData = await api.quiz.generate(
         selectedSubject === 'All Subjects' ? 'Computer Science Fundamentals' : selectedSubject,
-        questionCount
+        questionCount,
+        selectedFile
+          ? { document_id: selectedFile.document_id, file_name: selectedFile.file_name }
+          : undefined
       );
 
       sessionStorage.setItem('currentQuiz', JSON.stringify(quizData));
@@ -135,10 +144,28 @@ export default function ExamPreparationPage() {
               <Dropdown
                 label="Select Subject"
                 value={selectedSubject}
-                onChange={(val: string) => setSelectedSubject(val)}
+                onChange={(val: string) => {
+                  setSelectedSubject(val);
+                  setSelectedFileId('');
+                }}
                 options={[
                   { label: 'All Subjects / Comprehensive', value: 'All Subjects' },
                   ...subjects.map((sub) => ({ label: sub, value: sub })),
+                ]}
+              />
+            </div>
+
+            <div className="space-y-4 w-full sm:w-80">
+              <Dropdown
+                label="From File (optional)"
+                value={selectedFileId}
+                onChange={(val: string) => setSelectedFileId(val)}
+                options={[
+                  { label: 'All materials', value: '' },
+                  ...(selectedSubject !== 'All Subjects'
+                    ? files.filter((f) => !f.subject || f.subject === selectedSubject)
+                    : files
+                  ).map((f) => ({ label: f.file_name || f.title, value: f.document_id })),
                 ]}
               />
             </div>

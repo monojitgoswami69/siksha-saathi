@@ -1,75 +1,55 @@
 # Siksha Saathi
 
-Siksha Saathi is an AI-powered academic tutoring, institutional intelligence, and automated examination platform designed for higher education institutions. The system provides curriculum-aligned Socratic tutoring, hybrid vector-and-keyword retrieval, background ingestion pipelines, study material distribution, and institutional analytics.
+AI-powered academic tutoring, institutional intelligence, and automated examination platform for higher education. Curriculum-aligned Socratic tutoring, hybrid vector+full-text retrieval, a separate long-running ingestion/OCR worker, study-material distribution with stream/semester/section/subject scoping, and role-based institutional analytics.
 
 ---
 
 ## Core Features
 
 ### Student Portal
-- **Socratic AI Tutor**: Streaming, low-latency conversational assistant powered by Google Gemini, trained to guide students through conceptual reasoning with probing questions rather than giving immediate answers.
-- **Hybrid RAG Retrieval (Vector + Full-Text RRF)**: High-accuracy search combining PostgreSQL `pgvector` cosine similarity with `tsvector` keyword matching via Reciprocal Rank Fusion (RRF).
-- **Interactive Page-Level Citations**: Socratic responses cite referenced course notes with clickable source badges that launch in-browser PDF previews directly at the cited page.
-- **Study Materials Repository**: Access course documents, lecture notes, and syllabus materials with in-browser previews and direct downloads.
-- **Adaptive Quiz Generation**: Automated multiple-choice question (MCQ) generation derived directly from course documents, complete with real-time evaluation and detailed explanations.
-- **Student Authentication**: Secure `httpOnly` cookie session management supporting email/password and Google OAuth 2.0 integration.
+- **Socratic AI Tutor**: streaming Gemini chat that guides via probing questions; answers are strictly grounded in the student's own course materials.
+- **Hybrid RAG (Vector + Full-Text RRF)**: pgvector cosine + `tsvector` keyword search via Reciprocal Rank Fusion. Full-text uses the `simple` config — **multilingual** (English, Hindi, …) content is searchable.
+- **Chunk-level citations**: the LLM cites `[[#n]]` ordinals; the UI renders inline clickable chips that open a cited-passage highlight panel + deep-link the PDF page. Every cited chunk carries `paragraph_id`, `chunk_type`, `char_start/char_end`, `file_name`.
+- **Scoped materials**: a student only ever sees/retrieves chunks matching their **stream + semester + section** (with per-dimension `General` wildcards). Subject/file filters available in-chat and in-exam.
+- **Adaptive Quizzes**: MCQ generation scoped to the student's materials, with subject + file filters.
+- **No self-registration**: students are admin-enrolled (CSV) with all academic fields required; Google login only succeeds if the email is pre-enrolled. Students cannot self-edit stream/semester/section/roll.
 
-### Faculty and Admin Dashboard
-- **Asynchronous Document Ingestion Pipeline**: High-throughput file processing for PDF, DOCX, TXT, and scanned image formats (with OCR fallback). Uploads respond immediately (`202 Accepted`) while chunking, embedding, and indexing run in the background with live progress tracking (`0% -> 100%`).
-- **Curriculum Management**: Configure streams, semesters, subjects, and modules dynamically.
-- **Student Enrollment**: Batch student onboarding via CSV upload with automatic credential generation and profile initialization.
-- **Analytics & Telemetry**: Monitor student query patterns, subject-level confusion risk, and document utilization metrics.
-- **Audit Logging**: Comprehensive activity tracking for all administrative, ingestion, and configuration operations.
+### Faculty & Admin Dashboard
+- **Separate ingestion worker** (`/ingestion-worker`) deployed as a long-running service (e.g. Render) — text extraction, per-page OCR, and Gemini embeddings run without serverless timeouts. The web app only enqueues a DB job (`ingestion_jobs`) and returns `202`.
+- **Roles**: `admin` (full access), `hod` (their stream, incl. faculty performance), `faculty` (what they teach), `student`. `superuser`/`assistant` removed.
+- **Manage Faculty** page: create/update HODs/faculty, assign stream+department+role, reset passwords, delete (guards against last-admin removal / self-delete).
+- **Faculty Performance**: HOD sees faculty in their stream — subjects/semesters/sections each teaches + per-subject query heatmaps.
+- **Analytics**: per-subject/per-material heatmaps built from `query_citations` (every cited material increments, not just the top chunk). Role-scoped — no cross-stream leakage.
+- **Curriculum management**, **student enrollment**, **audit logging**.
 
 ---
 
-## Architecture and Tech Stack
+## Architecture & Tech Stack
 
 | Layer | Technology |
 |---|---|
-| **Framework** | Next.js 16 (App Router, Turbopack) |
-| **Language** | TypeScript |
-| **Database & ORM** | PostgreSQL (NeonDB) with `pgvector` (HNSW) + Drizzle ORM |
-| **Search Engine** | Hybrid Search (pgvector Cosine Distance + Full-Text `tsvector` with Reciprocal Rank Fusion) |
-| **LLM & Embeddings** | Google Gemini (`gemini-3.1-flash-lite`, `gemini-embedding-001`) with Exponential Backoff Retries |
-| **File Storage** | Cloudflare R2 (S3-compatible, zero-egress) / Dropbox API |
-| **Authentication** | `httpOnly` secure cookies, Next.js Proxy (`proxy.ts`), JWT (`jose`), `bcryptjs`, Google OAuth 2.0 |
-| **Styling** | Vanilla CSS & TailwindCSS design tokens |
+| **Web app** | Next.js 16 (App Router, Turbopack) — deployed to Vercel (slim bundle; no heavy ingestion deps) |
+| **Ingestion worker** | Standalone Node/TS service (`/ingestion-worker`) — deployed to Render (long-running) |
+| **Database** | PostgreSQL (NeonDB) + `pgvector` (HNSW) + Drizzle ORM |
+| **Search** | Hybrid: pgvector cosine + `tsvector` (`simple`/multilingual) via RRF |
+| **LLM/Embeddings** | Google Gemini (multilingual) — `batchEmbedContents` for ingestion throughput |
+| **OCR** | Tesseract.js (singleton worker, multilingual `eng+hin` by default via `TESSERACT_LANGS`) |
+| **PDF** | pdfjs-dist (per-page text + render image-only pages to canvas for OCR) |
+| **Storage** | Cloudflare R2 (S3) / Dropbox |
+| **Auth** | `httpOnly` cookies, Next.js Proxy, JWT (`jose`), `bcryptjs`, Google OAuth 2.0 |
 
 ---
 
-## Database Management & CLI Commands
+## Roles & Scoping
 
-Schema management is handled via **Drizzle ORM** and standalone CLI scripts:
+| Role | Sees |
+|---|---|
+| `admin` | Everything (all streams, all faculty, all students, curriculum, enrollment) |
+| `hod` | Their **stream** only — students, documents, analytics, and faculty performance for that stream |
+| `faculty` | Documents **they uploaded** (what they teach) + analytics on those materials |
+| `student` | Chunks matching their stream+semester+section (+ `General` per dimension) |
 
-```bash
-# Initialize PostgreSQL extensions, tables, and HNSW/GIN indexes
-npm run db:init
-
-# Seed administrator credentials and standard engineering curriculum
-npm run db:seed
-
-# Run comprehensive diagnostic report on latency, tables, and extensions
-npm run db:validate
-
-# Truncate all records across all tables (clean slate)
-npm run db:clear
-
-# Drop and re-initialize complete database
-npm run db:reset
-
-# Run init + seed + validate sequentially
-npm run db:setup
-
-# Generate Drizzle migrations from schema
-npm run db:generate
-
-# Push schema changes directly to PostgreSQL
-npm run db:push
-
-# Open Drizzle Studio visual web GUI
-npm run db:studio
-```
+Scoping is enforced server-side in every retrieval/analytics/listing route via `src/lib/server/analyticsScope.ts`. `document_id` filters are AND-ed with scope (never bypass). HOD/faculty cannot self-reassign their stream.
 
 ---
 
@@ -77,101 +57,80 @@ npm run db:studio
 
 ```
 siksha-saathi/
-├── db-scripts/                 # Standalone database management scripts (init, seed, validate, clear, reset)
-├── drizzle/                    # Drizzle ORM generated migration artifacts
+├── ingestion-worker/           # ⬅ Separate deployable ingestion service (Render)
+│   └── src/                    #   pipeline (pdfjs/ocr/officeparser), batchEmbedContents, job loop
+├── db-scripts/                 # init, seed, validate, clear, reset (idempotent source->file_name renames)
 ├── src/
 │   ├── app/
-│   │   ├── (auth)/             # Student login and registration
-│   │   ├── (student)/          # Chat, resources, and examination pages
-│   │   ├── admin/              # Institutional management portal (Knowledge base, analytics, curriculum)
-│   │   └── api/v1/             # REST API and SSE streaming endpoints
-│   ├── components/
-│   │   ├── admin/              # Admin interface components (Sidebar, Analytics, Modals)
-│   │   └── student/            # Student portal components (Chat, Layout, FilePreview)
-│   ├── context/                # React state providers (StudentAuth, AdminAuth, Chat, Toast)
-│   ├── db/                     # Drizzle ORM schema definitions and typed client
-│   ├── lib/
-│   │   ├── client/             # Frontend API client and utilities
-│   │   └── server/             # Database pool, LLM, Embeddings, Storage, and Auth services
-│   ├── proxy.ts                # Next.js Proxy for zero-flash server-side route protection
-│   └── types/                  # Shared TypeScript interfaces
-├── architecture.md             # Complete institutional architecture and design document
-├── drizzle.config.ts           # Drizzle Kit configuration
-├── .env.example                # Environment variable template
-├── package.json
-└── tsconfig.json
+│   │   ├── (auth)/login        # Student login (no registration)
+│   │   ├── (student)/         # chat, resources, exam (with subject/file filters)
+│   │   ├── admin/(dashboard)/ # knowledge-base, add-document, add-text, students, faculty,
+│   │   │                       #   faculty-performance, analytics, manage-curriculum, user-settings
+│   │   └── api/v1/            # REST + SSE: query/stream, search, quiz, documents, filters,
+│   │                          #   analytics (overview/stream/subject/student/faculty), admin/users
+│   ├── components/            # student + admin UI (chat chips, FilePreview highlight, Sidebar)
+│   ├── context/              # StudentAuth, AdminAuth, Chat, Toast
+│   ├── db/schema.ts          # Drizzle schema (student_users.section, documents.file_name, etc.)
+│   └── lib/server/           # db, auth (+getDashboardProfile), analyticsScope, llm, storage, audit, embeddings
+├── architecture.md
+└── .env.example
 ```
 
 ---
 
-## Environment Configuration
+## Database CLI
 
-Create a `.env.local` file in the project root based on `.env.example`:
-
-```env
-# Database
-DATABASE_URL=postgresql://user:password@host/database?sslmode=verify-full
-
-# Seeding & Admin Credentials
-SEED_ADMIN_EMAIL=admin@sikshasaathi.edu
-SEED_ADMIN_PASSWORD=adminpassword
-SEED_ADMIN_NAME=Siksha Saathi Administrator
-
-# Gemini AI & RAG Configuration
-GEMINI_API_KEY=your_gemini_api_key
-GEMINI_MODEL=gemini-3.1-flash-lite
-GEMINI_EMBEDDING_MODEL=gemini-embedding-001
-GEMINI_EMBEDDING_DIM=768
-RAG_SIMILARITY_THRESHOLD=0.25
-CHUNK_SIZE=500
-CHUNK_OVERLAP=50
-RETRIEVAL_TOP_K=5
-
-# Authentication & Security
-JWT_SECRET=your_jwt_secret_key
-JWT_EXPIRES_IN=7d
-BCRYPT_ROUNDS=10
-NEXT_PUBLIC_GOOGLE_CLIENT_ID=your_google_client_id
-GOOGLE_CLIENT_SECRET=your_google_client_secret
-
-# Defaults for Student Onboarding
-DEFAULT_STUDENT_PASSWORD=student123
-DEFAULT_STUDENT_STREAM=cse
-DEFAULT_STUDENT_SEM=1
-DEFAULT_STUDENT_BATCH=2024-2028
-
-# Storage (Cloudflare R2)
-STORAGE_PROVIDER=r2
-R2_ACCOUNT_ID=your_r2_account_id
-R2_ACCESS_KEY_ID=your_r2_access_key
-R2_SECRET_ACCESS_KEY=your_r2_secret_key
-R2_BUCKET_NAME=your_bucket_name
-R2_PUBLIC_DOMAIN=https://your-custom-domain.com
+```bash
+npm run db:setup      # init (creates tables, indexes, idempotent source->file_name rename) + seed + validate
+npm run db:init       # apply schema (idempotent — safe on existing DBs)
+npm run db:seed       # seed admin (SEED_ADMIN_*) + curriculum
+npm run db:validate   # health check (tables, indexes, extensions)
+npm run db:clear      # truncate all
+npm run db:reset      # drop + recreate
+npm run db:generate   # sync drizzle migrations from schema.ts (if you use drizzle-kit)
 ```
 
 ---
 
 ## Getting Started
 
-### 1. Install Dependencies
-
+### Web app
 ```bash
 npm install
+npm run db:setup          # sets DATABASE_URL, SEED_ADMIN_* in .env.local first
+npm run dev               # http://localhost:3000
 ```
+Admin login: `admin@sikshasaathi.edu` / `admin123` (from `SEED_ADMIN_*` — **change before production**).
 
-### 2. Setup Database Schema & Seed Data
-
+### Ingestion worker (run locally or deploy to Render)
 ```bash
-npm run db:setup
+cd ingestion-worker
+cp .env.example .env      # DATABASE_URL (same as web), GEMINI_API_KEY, R2_*/DROPBOX_*, TESSERACT_LANGS
+npm install
+npm run dev               # polls ingestion_jobs, processes extraction/OCR/embeddings
 ```
+Or from repo root: `npm run worker:install && npm run worker:dev`. See `ingestion-worker/README.md` for Render deployment.
 
-### 3. Run Development Server
+> **The worker must be running** for uploaded documents to be indexed. The web app enqueues; the worker does the heavy work (no timeout pressure). Without it, documents stay `processing`.
 
-```bash
-npm run dev
+---
+
+## Environment
+
+Key variables (see `.env.example` / `ingestion-worker/.env.example`):
+
+```env
+DATABASE_URL=postgresql://...
+GEMINI_API_KEY=...
+GEMINI_MODEL=gemini-3.1-flash-lite
+GEMINI_EMBEDDING_MODEL=gemini-embedding-001
+GEMINI_EMBEDDING_DIM=768
+JWT_SECRET=...
+SEED_ADMIN_EMAIL=admin@sikshasaathi.edu
+SEED_ADMIN_PASSWORD=admin123
+# R2 / Dropbox / Google OAuth ...
 ```
-
-The application will be available at `http://localhost:3000`.
+Students are **admin-enrolled only** — no `DEFAULT_STUDENT_*` academic env vars. The enroll CSV requires `email,name,roll,stream,sem,section`; the admin sets a batch initial password per import.
 
 ---
 
@@ -179,14 +138,17 @@ The application will be available at `http://localhost:3000`.
 
 | Method | Endpoint | Description |
 |---|---|---|
-| `POST` | `/api/v1/query/stream` | Socratic RAG chat stream (SSE) with Hybrid Search (RRF) and citation tags |
-| `POST` | `/api/v1/search` | Direct Hybrid Search querying vector cosine similarity + full-text matches |
-| `POST` | `/api/v1/quiz/generate` | Generate structured MCQs from course content |
-| `POST` | `/api/v1/quiz/submit` | Evaluate student quiz submission and record telemetry |
-| `GET` | `/api/v1/documents` | List course materials scoped to student stream/semester |
-| `POST` | `/api/v1/ingest` | Asynchronous file processing (returns 202 Accepted with live background indexing) |
-| `GET` | `/api/v1/documents/:id/status` | Real-time status and progress percentage of background document indexing |
-| `GET` | `/api/v1/filters` | Fast cached stream, semester, and subject metadata (with 60s TTL) |
-| `POST` | `/api/v1/auth/google` | Google OAuth token verification and session initiation |
-| `POST` | `/api/v1/auth/logout` | Invalidate and clear session cookies |
-| `GET` | `/api/v1/analytics/overview` | Institutional query and engagement statistics |
+| `POST` | `/api/v1/query/stream` | Socratic RAG SSE stream; scope + subject/file filters; chunk-level `[[#n]]` citations; writes `query_citations` |
+| `POST` | `/api/v1/search` | Hybrid RRF search (scoped) |
+| `POST` | `/api/v1/quiz/generate` | Scoped MCQ generation with subject/file/module filters |
+| `POST` | `/api/v1/quiz/submit` | Evaluate + record telemetry |
+| `GET`  | `/api/v1/documents` | List materials (student/hod/faculty scoped) |
+| `POST` | `/api/v1/ingest` | Enqueue ingestion job (202) — worker processes async |
+| `GET`  | `/api/v1/documents/:id/chunks/:chunkId` | Single chunk + preview URL (for citation highlight, scope-checked) |
+| `GET`  | `/api/v1/filters` | streams, semesters, **sections**, subjects, scoped **files**, curriculum |
+| `GET`  | `/api/v1/analytics/overview` | Role-scoped totals, at-risk, weak domains, weekly |
+| `GET`  | `/api/v1/analytics/stream` | Per-subject + per-material heatmap (scoped) |
+| `GET`  | `/api/v1/analytics/faculty` | Faculty performance (HOD: their stream; admin: all; faculty: self) |
+| `POST` | `/api/v1/admin/users` | Create faculty/HOD/admin (admin only) |
+| `PATCH/DELETE` | `/api/v1/admin/users/:uid` | Update / delete faculty (guards: last admin, self-delete) |
+| `POST` | `/api/v1/admin/users/:uid/password` | Reset password |

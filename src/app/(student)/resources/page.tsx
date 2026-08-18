@@ -56,7 +56,7 @@ export default function ResourcesPage() {
   const handleGenerateQuiz = async (doc: DocumentInfo) => {
     setIsGeneratingQuizId(doc.document_id);
     try {
-      const quizData = await api.quiz.generate(doc.subject || 'Course Material', 5, doc.document_id);
+      const quizData = await api.quiz.generate(doc.subject || 'Course Material', 5, { document_id: doc.document_id });
       sessionStorage.setItem('currentQuiz', JSON.stringify(quizData));
       router.push('/exam/quiz');
     } catch (err: any) {

@@ -108,10 +108,14 @@ export const api = {
   },
 
   quiz: {
-    generate: (subject: string, num_questions = 5, document_id?: string): Promise<QuizResponse> =>
+    generate: (
+      subject: string,
+      num_questions = 5,
+      filters?: { document_id?: string; file_name?: string; module?: string }
+    ): Promise<QuizResponse> =>
       request('/quiz/generate', {
         method: 'POST',
-        body: JSON.stringify({ subject, num_questions, document_id }),
+        body: JSON.stringify({ subject, num_questions, ...filters }),
       }),
     submit: (data: any) =>
       request('/quiz/submit', { method: 'POST', body: JSON.stringify(data) }),

@@ -110,42 +110,7 @@ export const documentChunks = pgTable(
     index('idx_chunks_metadata').on(table.stream, table.semester, table.section, table.subject),
     index('idx_chunks_doc_id').on(table.documentId, table.chunkIndex),
     index('idx_chunks_embedding').using('hnsw', table.embedding.op('vector_cosine_ops')),
-    index('idx_chunks_fts').using('gin', sql`to_tsvector('english', ${table.rawContent})`),
-  ]
-);
-
-/**
- * 4b. Document Images (image chunks: extracted/OCR'd images, citable & retrievable)
- */
-export const documentImages = pgTable(
-  'document_images',
-  {
-    id: uuid('id').defaultRandom().primaryKey(),
-    documentId: uuid('document_id')
-      .references(() => documents.id, { onDelete: 'cascade' })
-      .notNull(),
-    chunkId: uuid('chunk_id')
-      .references(() => documentChunks.id, { onDelete: 'cascade' })
-      .notNull(),
-    page: integer('page'),
-    paragraphId: varchar('paragraph_id', { length: 100 }),
-    storageProvider: varchar('storage_provider', { length: 50 }).default('r2'),
-    fileKey: varchar('file_key', { length: 500 }),
-    previewUrl: varchar('preview_url', { length: 1000 }),
-    mimeType: varchar('mime_type', { length: 100 }),
-    ocrText: text('ocr_text'),
-    fileName: varchar('file_name', { length: 255 }).notNull(),
-    stream: varchar('stream', { length: 100 }),
-    semester: varchar('semester', { length: 20 }),
-    section: varchar('section', { length: 50 }),
-    subject: varchar('subject', { length: 200 }),
-    embedding: vector('embedding', { dimensions: 768 }),
-    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
-  },
-  (table) => [
-    index('idx_doc_images_doc').on(table.documentId),
-    index('idx_doc_images_chunk').on(table.chunkId),
-    index('idx_doc_images_embedding').using('hnsw', table.embedding.op('vector_cosine_ops')),
+    index('idx_chunks_fts').using('gin', sql`to_tsvector('simple', ${table.rawContent})`),
   ]
 );
 
@@ -300,25 +265,12 @@ export const auditLogs = pgTable(
  */
 export const documentsRelations = relations(documents, ({ many }) => ({
   chunks: many(documentChunks),
-  images: many(documentImages),
 }));
 
-export const documentChunksRelations = relations(documentChunks, ({ one, many }) => ({
+export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
   document: one(documents, {
     fields: [documentChunks.documentId],
     references: [documents.id],
-  }),
-  images: many(documentImages),
-}));
-
-export const documentImagesRelations = relations(documentImages, ({ one }) => ({
-  document: one(documents, {
-    fields: [documentImages.documentId],
-    references: [documents.id],
-  }),
-  chunk: one(documentChunks, {
-    fields: [documentImages.chunkId],
-    references: [documentChunks.id],
   }),
 }));
 

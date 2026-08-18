@@ -75,7 +75,7 @@ export async function POST(req: NextRequest) {
       pIdx++;
     }
     if (reqFileName) {
-      whereFilter += ` AND c.file_name = $${pIdx}`;
+      whereFilter += ` AND LOWER(c.file_name) = LOWER($${pIdx})`;
       params.push(reqFileName);
       pIdx++;
     }
@@ -101,10 +101,10 @@ export async function POST(req: NextRequest) {
       text_search AS (
         SELECT
           c.id,
-          ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) DESC) AS t_rank,
-          ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) AS t_score
+          ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('simple', c.raw_content), plainto_tsquery('simple', $2)) DESC) AS t_rank,
+          ts_rank_cd(to_tsvector('simple', c.raw_content), plainto_tsquery('simple', $2)) AS t_score
         FROM document_chunks c
-        ${scopeClauseForHybrid} AND to_tsvector('english', c.raw_content) @@ plainto_tsquery('english', $2)
+        ${scopeClauseForHybrid} AND to_tsvector('simple', c.raw_content) @@ plainto_tsquery('simple', $2)
         LIMIT 25
       )
       SELECT

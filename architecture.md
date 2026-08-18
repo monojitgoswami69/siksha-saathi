@@ -57,19 +57,20 @@ graph TD
 
 The platform enforces a strict two-tier user ecosystem separated by authentication tokens and database tables:
 
-1. **Dashboard Users (`dashboard_users` table)**: Faculty, HODs, Coordinators, and Administrators.
+1. **Dashboard Users (`dashboard_users` table)**: Admin, HOD, and Faculty.
 2. **Student Users (`student_users` table)**: Undergraduate and Postgraduate students.
 
 ### RBAC Permission Matrix
 
-| Role | Target Table | Primary Responsibilities | Allowed Administrative Capabilities |
+| Role | Target Table | Primary Responsibilities | Allowed Capabilities |
 |---|---|---|---|
-| `superuser` | `dashboard_users` | Platform owner / IT Director | Full system access, all streams, table management, curriculum configuration, student enrollment, raw database operations. |
-| `admin` | `dashboard_users` | College Administrator | Batch student onboarding, curriculum authoring, institution-wide analytics, document management, audit log inspection. |
-| `hod` | `dashboard_users` | Head of Department | Stream analytics for assigned department, student directory viewing, curriculum review, course document uploads. |
-| `faculty` | `dashboard_users` | Course Instructor / Teacher | Course document uploads (PDF/DOCX/OCR), raw text ingestion, subject query analytics, knowledge base browsing. |
-| `assistant` | `dashboard_users` | Teaching Assistant | Subject analysis, student query pattern inspection, document preview. |
-| `student` | `student_users` | Enrolled Student | Socratic AI tutoring, course notes preview & download, adaptive MCQ exams, profile customization. |
+| `admin` | `dashboard_users` | College Administrator | Full system access: manage faculty (create/update/delete/reset-password), curriculum, student enrollment, document management, all analytics across all streams. |
+| `hod` | `dashboard_users` | Head of Department | Scoped to their **stream**: analytics + heatmaps, faculty performance (subjects/sems/sections each faculty teaches), student directory for their stream, uploads forced to their stream. Cannot see other streams. |
+| `faculty` | `dashboard_users` | Course Instructor | Uploads (forced to their stream); sees analytics only for materials **they uploaded**. Cannot access the student directory. |
+| `student` | `student_users` | Enrolled Student | Socratic tutoring, notes, exams. Retrieves only chunks matching `stream` + `semester` + `section` (per-dimension `General` wildcard). |
+
+> `superuser` and `assistant` removed (single-tenant). `admin` is the top role — `requireRole` grants access if the role is in the allow-list or is `admin`.
+> HOD/faculty `stream` is resolved from `dashboard_users` at request time (JWT carries no stream). `document_id` filters are AND-ed with scope (never bypass). Non-admins cannot self-reassign stream.
 
 ### Secure Session Cookies & Next.js Proxy
 Authentication uses **`httpOnly` secure cookies** with Next.js Proxy ([`src/proxy.ts`](file:///Users/monojitgoswami/projects/siksha-saathi/src/proxy.ts)) for zero-flash server-side route protection and complete immunity against client-side XSS token theft:
@@ -133,9 +134,10 @@ When a teacher uploads a document with a new stream or subject tag, the platform
 
 This ensures zero configuration lag: newly ingested course tags appear immediately across all dropdowns.
 
-### 3. Sections and Cohorts (Batches)
-- Each student record includes a `batch` attribute (e.g. `'2024-2028'`) and department stream.
-- Sections (e.g., `Section A`, `Section B`) can be assigned directly into the `batch` attribute during CSV batch enrollment or student registration without schema migrations.
+### 3. Sections
+- Each student record includes a **`section`** column (e.g. `'cse1'`, `'cse2'`, `'ece1'`) — the class grouping within a stream.
+- Documents and chunks carry `section` too, so a material can be scoped to a specific section or marked `General` (available to all sections in that stream/semester).
+- Retrieval enforces all four dimensions independently — `General` on one dimension is a wildcard for that dimension only (e.g. `semester=1, stream=General, section=General` → visible to all stream/section students in semester 1).
 
 ---
 
@@ -213,28 +215,37 @@ flowchart TD
 
 ## 6. Asynchronous Document Ingestion, OCR & Hybrid Knowledge Base
 
+The ingestion pipeline runs in a **separate long-running service** (`/ingestion-worker`, deployed e.g. on Render) — not in the serverless web app. This removes all timeout pressure (OCR + embeddings can take minutes for large/scanned docs).
+
 ```mermaid
 flowchart TD
-    File[Uploaded File: PDF, DOCX, TXT, Image] --> Ingest[POST /api/v1/ingest]
-    Ingest --> InitDB[(Insert documents row<br>status: processing, progress: 10%)]
-    InitDB --> FastResp[Fast 202 Accepted Response in <500ms<br>returns document_id & preview_url]
+    File[Uploaded File: PDF, DOCX, PPTX, MD, Image] --> Ingest[POST /api/v1/ingest]
+    Ingest --> Upload[Upload original to R2/Dropbox]
+    Upload --> InitDB[(Insert documents row<br>status: processing, progress: 10%)]
+    InitDB --> Enqueue[(Insert ingestion_jobs row<br>status: pending)]
+    Enqueue --> FastResp[Fast 202 Accepted Response<br>returns document_id & preview_url]
     
-    InitDB -.-> AsyncWorker[Background Processing Worker]
-    
-    AsyncWorker --> Step1[1. Text Extraction: 30% progress<br>pdf-parse / Tesseract OCR / mammoth]
-    Step1 --> Step2[2. Semantic Chunking: 60% progress<br>CHUNK_SIZE=500, OVERLAP=50]
-    Step2 --> Step3[3. Batch Vectorization: 80% progress<br>Gemini 768-dim Embeddings]
-    Step3 --> Step4[4. Database Storage: 100% progress<br>document_chunks table with HNSW & GIN FTS]
-    Step4 --> Step5[(Update documents row<br>status: ready, progress: 100%)]
+    Enqueue -.-> Worker[ ingestion-worker polls ingestion_jobs<br>FOR UPDATE SKIP LOCKED ]
+    Worker --> Download[Download file from storage by file_key]
+    Download --> Step1[1. Text Extraction: 30%<br>pdfjs-dist per-page text]
+    Step1 --> OcrDetect{per-page text<br>density < 20 chars?}
+    OcrDetect -- yes --> Render[Render page to PNG<br>@napi-rs/canvas] --> OCR[Tesseract.js OCR<br>singleton worker, multilingual]
+    OcrDetect -- no --> Step2
+    OCR --> Step2[2. Paragraph-aware Chunking: 60%<br>paragraph_id, char_start/end, chunk_type]
+    Step2 --> Step3[3. Batch Embeddings: 80%<br>Gemini batchEmbedContents <=100/call]
+    Step3 --> Step4[4. Batch Insert: 100%<br>document_chunks HNSW + GIN(simple/multilingual)]
+    Step4 --> Step5[(documents status: ready<br>job status: done)]
 ```
 
-1. **Non-Blocking Ingestion**: Uploads return `202 Accepted` immediately, eliminating HTTP gateway timeouts on large textbooks.
-2. **Format Handling & OCR Fallback**:
-   - **PDF**: Direct text extraction using `pdf-parse`. If text density is low (< 50 characters), automatically invokes **Tesseract.js OCR**.
-   - **DOCX**: Extracted using `mammoth`.
-   - **Images**: Direct OCR processing via Tesseract.
-3. **Chunking Engine**: Splits extracted text into semantic chunks with sliding overlap window to preserve inter-sentence context.
-4. **Embeddings & Storage**: Original files saved in Cloudflare R2 ($0 egress S3) / Dropbox. Vectors stored in `document_chunks` with **PostgreSQL HNSW** vector cosine index and **PostgreSQL GIN full-text index**.
+1. **Non-Blocking**: the web app only authenticates, scopes (non-admin forced to their stream), uploads, inserts the document row + an `ingestion_jobs` row, and returns `202`. No heavy work in the serverless function.
+2. **Worker** polls `ingestion_jobs` (`FOR UPDATE SKIP LOCKED`), claims a job, downloads the file from storage, and runs the pipeline. Failed jobs are requeued up to `max_attempts` (default 3).
+3. **Format Handling & per-page OCR detection**:
+   - **PDF**: `pdfjs-dist` per-page `getTextContent` (accurate page tracking). For each page with < `OCR_MIN_TEXT_CHARS`, render the page to PNG (`@napi-rs/canvas`) and OCR it (Tesseract) — so scanned/image-only pages become searchable text. `OCR_MAX_PAGES` caps rendering for huge scanned books.
+   - **DOCX**: `mammoth`. **PPTX**: `officeparser`. **MD**: front-matter stripped. **Images**: direct OCR. **TXT/CSV**: utf-8.
+4. **Multilingual**: OCR defaults to `eng+hin` (`TESSERACT_LANGS`); full-text search uses `to_tsvector('simple', …)` (language-agnostic); Gemini embeddings/LLM are natively multilingual.
+5. **Chunking**: paragraph-aware — each chunk carries `paragraph_id` (`page:para`), `chunk_type` (`text`/`image`/`table`), `char_start`/`char_end`, `file_name`, and scope metadata.
+6. **Embeddings**: `batchEmbedContents` (≤100 texts per Gemini call) instead of N single calls — ~10× faster. Stored with HNSW cosine index + GIN FTS (`simple`).
+7. **Speedups**: singleton Tesseract worker (reused across pages/jobs); batch chunk inserts (groups of 100).
 
 ---
 
@@ -251,26 +262,28 @@ sequenceDiagram
     participant LLM as Gemini Flash (with Exponential Backoff)
 
     Student->>UI: Types question: "Explain binary tree height formula"
-    UI->>StreamRoute: POST query with student stream & semester
+    UI->>StreamRoute: POST query with student stream/sem/section + optional subject/file filter
     StreamRoute->>Embed: getEmbedding(queryText)
     Embed-->>StreamRoute: 768-dim query vector
-    StreamRoute->>DB: Execute Reciprocal Rank Fusion (RRF)<br>Vector Cosine Rank + GIN Full-Text Rank
-    DB-->>StreamRoute: Top-K Grounded Chunks with docId & Page Numbers
-    StreamRoute->>LLM: Socratic System Prompt + Structured Citations Context
-    LLM-->>StreamRoute: Token Stream (SSE) with [[Source: "...", Page: X]]
-    StreamRoute-->>UI: Live Stream + Clickable Citation Badges
-    UI-->>Student: Displays animated Socratic explanation
-    Note over UI,Student: Student clicks citation pill -> PDF opens at exact cited page
+    StreamRoute->>DB: Hybrid RRF (scope-filtered)<br>Vector Cosine + GIN Full-Text(simple)
+    DB-->>StreamRoute: Top-K chunks with id, paragraph_id, file_name, page, subject, scope
+    StreamRoute->>LLM: Socratic prompt + numbered [#1][#2]… context blocks
+    LLM-->>StreamRoute: Token Stream (SSE) with [[#n]] ordinal citations
+    StreamRoute-->>UI: metadata frame (sources: n->chunk_id, file_name, page, paragraph_id) + live stream
+    UI-->>Student: inline clickable #n chips + Socratic explanation
+    Note over UI,Student: clicks chip -> GET /documents/:id/chunks/:chunkId -> FilePreview highlights cited passage + opens PDF at page
+    StreamRoute->>DB: parse [[#n]] from response -> insert query_citations for every cited chunk (heatmap counters)
 ```
 
 ### Hybrid Search Formula: Reciprocal Rank Fusion (RRF)
-Retrieval combines semantic vector distance with lexical keyword matching:
+Retrieval combines semantic vector distance with lexical keyword matching (multilingual via `simple` tsvector):
 $$\text{RRF Score} = \frac{1}{60 + \text{Vector Rank}} + \frac{1}{60 + \text{Text Search Rank}}$$
 
-### Interactive Page-Level Citations
-1. **Curriculum-Grounded**: The AI strictly answers using course reference material provided in context.
-2. **Structured Citation Syntax**: Gemini is instructed to emit citation anchors: `[[Source: "Unit 1.pdf", Page: 14, docId: "uuid"]]`.
-3. **Click-to-Page PDF Viewer**: The student chat UI parses these tags into interactive buttons. Clicking opens [`FilePreview`](file:///Users/monojitgoswami/projects/siksha-saathi/src/components/student/FilePreview.tsx) scrolled directly to the cited page.
+### Chunk-level Citations & Counters
+1. **Curriculum-Grounded**: the AI strictly answers using the scoped course material in context.
+2. **Ordinal citations**: each context block is labeled `[#n]`; Gemini emits `[[#n]]`. The backend deterministically maps ordinals → real `chunk_id`/metadata from the `sources` payload (the LLM never sees raw UUIDs — hallucination-proof).
+3. **Click-to-chunk**: inline `#n` chips fetch `GET /api/v1/documents/:id/chunks/:chunkId` (scope-checked) → `FilePreview` shows a **highlighted cited-passage panel** (text + page + paragraph + OCR badge) and deep-links the PDF page.
+4. **Per-material/per-subject heatmaps**: after the stream, `[[#n]]` ordinals are parsed and a `query_citations` row is inserted for **every** cited chunk (material1 + material2 both increment). Dashboards aggregate `COUNT(DISTINCT query_log_id)` per subject/document — a query citing two subjects increments both.
 
 ---
 
@@ -316,7 +329,7 @@ erDiagram
         varchar display_name
         varchar stream
         varchar sem
-        varchar batch
+        varchar section
         varchar roll
         timestamptz created_at
     }
@@ -324,13 +337,14 @@ erDiagram
     documents {
         uuid id PK
         varchar title
-        varchar source
+        varchar file_name
         varchar mime_type
         bigint file_size_bytes
         varchar storage_provider
         varchar file_key
         varchar stream
         varchar semester
+        varchar section
         varchar subject
         varchar module
         uuid uploaded_by
@@ -341,8 +355,14 @@ erDiagram
         uuid document_id FK
         int chunk_index
         text raw_content
+        varchar file_name
+        varchar paragraph_id
+        varchar chunk_type
+        int char_start
+        int char_end
         varchar stream
         varchar semester
+        varchar section
         varchar subject
         vector embedding
     }
