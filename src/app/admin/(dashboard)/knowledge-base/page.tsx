@@ -85,7 +85,7 @@ export default function KnowledgeBasePage() {
   };
 
   const filtered = documents.filter((doc) =>
-    (doc.title || doc.source || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (doc.title || doc.file_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (doc.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (doc.stream || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
@@ -168,7 +168,7 @@ export default function KnowledgeBasePage() {
                     <tr key={docId} className="hover:bg-slate-800/40 transition-colors">
                       <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2.5">
                         <FileText className="w-4 h-4 text-indigo-400 flex-shrink-0" />
-                        <span className="truncate max-w-xs">{doc.title || doc.source}</span>
+                        <span className="truncate max-w-xs">{doc.title || doc.file_name}</span>
                       </td>
                       <td className="py-3.5 px-4">
                         <span className="px-2 py-0.5 bg-indigo-950 text-indigo-300 rounded font-semibold">

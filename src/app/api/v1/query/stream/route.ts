@@ -18,7 +18,9 @@ export async function POST(req: NextRequest) {
       session_id,
       stream: reqStream,
       semester: reqSem,
+      section: reqSection,
       document_id: reqDocId,
+      file_name: reqFileName,
       subject: reqSubject,
       history = [],
       top_k = 5,
@@ -34,73 +36,97 @@ export async function POST(req: NextRequest) {
     // Parallel embedding generation & student profile lookup
     const [queryEmbedding, studentRes] = await Promise.all([
       getEmbedding(message),
-      query('SELECT stream, sem FROM student_users WHERE id = $1;', [user.uid]).catch(() => ({
-        rowCount: 0,
-        rows: [],
-      })),
+      query('SELECT stream, sem, section FROM student_users WHERE id = $1;', [user.uid]).catch(
+        () => ({ rowCount: 0, rows: [] })
+      ),
     ]);
 
-    // Resolve student stream & semester
+    // Resolve student scope (request override takes precedence, else DB profile)
     let studentStream = reqStream;
     let studentSem = reqSem;
+    let studentSection = reqSection;
     if (studentRes.rowCount && studentRes.rowCount > 0) {
       const profile = studentRes.rows[0] as any;
       studentStream = studentStream || profile.stream;
       studentSem = studentSem || profile.sem;
+      studentSection = studentSection || profile.section;
     }
 
     const vectorStr = formatVector(queryEmbedding);
     const cleanSearchText = message.replace(/[^\w\s]/gi, ' ').trim() || message;
 
-    // Hybrid Search: Vector Cosine + Full-Text Search via Reciprocal Rank Fusion (RRF)
+    // ---- Build scope filter (applied to BOTH vector + text search + fallback) ----
+    // document_id is AND-ed with scope (never bypasses it) to prevent scope escape.
     let whereFilter = 'WHERE c.embedding IS NOT NULL';
-    const params: any[] = [vectorStr, cleanSearchText];
-    let pIdx = 3;
+    const params: any[] = [];
+    let pIdx = 1;
 
+    if (studentStream && studentStream !== 'All') {
+      whereFilter += ` AND (c.stream = $${pIdx} OR c.stream = 'General' OR c.stream IS NULL)`;
+      params.push(studentStream);
+      pIdx++;
+    }
+    if (studentSem && studentSem !== 'All') {
+      whereFilter += ` AND (c.semester = $${pIdx} OR c.semester = 'General' OR c.semester IS NULL)`;
+      params.push(studentSem);
+      pIdx++;
+    }
+    if (studentSection && studentSection !== 'All') {
+      whereFilter += ` AND (c.section = $${pIdx} OR c.section = 'General' OR c.section IS NULL)`;
+      params.push(studentSection);
+      pIdx++;
+    }
+    if (reqSubject && reqSubject !== 'All Subjects') {
+      whereFilter += ` AND (LOWER(c.subject) = LOWER($${pIdx}) OR c.subject = 'General' OR c.subject IS NULL)`;
+      params.push(reqSubject);
+      pIdx++;
+    }
+    if (reqFileName) {
+      whereFilter += ` AND c.file_name = $${pIdx}`;
+      params.push(reqFileName);
+      pIdx++;
+    }
     if (reqDocId) {
       whereFilter += ` AND c.document_id = $${pIdx}`;
       params.push(reqDocId);
       pIdx++;
-    } else {
-      if (studentStream && studentStream !== 'All') {
-        whereFilter += ` AND (c.stream = $${pIdx} OR c.stream = 'General' OR c.stream IS NULL)`;
-        params.push(studentStream);
-        pIdx++;
-      }
-      if (studentSem && studentSem !== 'All') {
-        whereFilter += ` AND (c.semester = $${pIdx} OR c.semester = 'General' OR c.semester IS NULL)`;
-        params.push(studentSem);
-        pIdx++;
-      }
-      if (reqSubject && reqSubject !== 'All Subjects') {
-        whereFilter += ` AND (LOWER(c.subject) = LOWER($${pIdx}) OR c.subject = 'General' OR c.subject IS NULL)`;
-        params.push(reqSubject);
-        pIdx++;
-      }
     }
+
+    // The hybrid SQL reuses $1 (vector) and $2 (text) as the first two params;
+    // scope params must follow them. We shift scope params to start at index 3.
+    const hybridParams: any[] = [vectorStr, cleanSearchText, ...params];
+    let hybridPIdx = 3;
+    let scopeClauseForHybrid = whereFilter;
+    // Re-number scope params from 3 onward
+    scopeClauseForHybrid = whereFilter.replace(/\$(\d+)/g, (_, n) => {
+      const num = parseInt(n, 10);
+      // scope params were numbered starting at 1 in `params`; now they start at 3
+      return `$${num + 2}`;
+    });
 
     const hybridSql = `
       WITH vector_search AS (
-        SELECT 
+        SELECT
           c.id,
           ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1) AS v_rank,
           (1 - (c.embedding <=> $1)) AS v_sim
         FROM document_chunks c
-        ${whereFilter}
+        ${scopeClauseForHybrid}
         LIMIT 25
       ),
       text_search AS (
-        SELECT 
+        SELECT
           c.id,
           ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) DESC) AS t_rank,
           ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) AS t_score
         FROM document_chunks c
-        ${whereFilter} AND to_tsvector('english', c.raw_content) @@ plainto_tsquery('english', $2)
+        ${scopeClauseForHybrid} AND to_tsvector('english', c.raw_content) @@ plainto_tsquery('english', $2)
         LIMIT 25
       )
-      SELECT 
+      SELECT
         c.id, c.document_id, c.chunk_index, c.total_chunks, c.raw_content,
-        c.page_start, c.page_end, c.source, c.title, c.stream, c.semester, c.subject, c.module,
+        c.page_start, c.page_end, c.paragraph_id, c.chunk_type, c.char_start, c.char_end,
+        c.file_name, c.title, c.stream, c.semester, c.section, c.subject, c.module,
         COALESCE(v.v_sim, 0) AS similarity,
         COALESCE(t.t_score, 0) AS text_score,
         (COALESCE(1.0 / (60 + v.v_rank), 0.0) + COALESCE(1.0 / (60 + t.t_rank), 0.0)) AS rrf_score
@@ -109,26 +135,32 @@ export async function POST(req: NextRequest) {
       LEFT JOIN text_search t ON c.id = t.id
       WHERE v.id IS NOT NULL OR t.id IS NOT NULL
       ORDER BY rrf_score DESC, similarity DESC
-      LIMIT $${pIdx};
+      LIMIT $${hybridPIdx};
     `;
-    params.push(topK);
+    hybridParams.push(topK);
 
     let searchResults: any[] = [];
     try {
-      const res = await query(hybridSql, params);
-      searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD || r.text_score > 0.05);
+      const res = await query(hybridSql, hybridParams);
+      searchResults = res.rows.filter(
+        (r) => r.similarity > SIMILARITY_THRESHOLD || r.text_score > 0.05
+      );
     } catch (e: any) {
-      console.warn('Hybrid search fallback to basic vector search:', e.message);
+      console.warn('Hybrid search fallback to scoped vector search:', e.message);
       try {
+        // Retain scope (no escape): re-number params for fallback (vector first, then scope)
+        const fallbackScope = whereFilter.replace(/\$(\d+)/g, (_, n) => `$${parseInt(n, 10) + 1}`);
+        const fallbackParams: any[] = [vectorStr, ...params, topK];
         const fallbackSql = `
           SELECT id, document_id, chunk_index, total_chunks, raw_content,
-                 page_start, page_end, source, title, stream, semester, subject, module,
+                 page_start, page_end, paragraph_id, chunk_type, char_start, char_end,
+                 file_name, title, stream, semester, section, subject, module,
                  1 - (embedding <=> $1) AS similarity
-          FROM document_chunks
-          WHERE embedding IS NOT NULL
-          ORDER BY embedding <=> $1 LIMIT 5;
+          FROM document_chunks c
+          ${fallbackScope}
+          ORDER BY embedding <=> $1 LIMIT $${params.length + 2};
         `;
-        const res = await query(fallbackSql, [vectorStr]);
+        const res = await query(fallbackSql, fallbackParams);
         searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD);
       } catch (err: any) {
         console.error('Vector fallback search error:', err.message);
@@ -136,23 +168,35 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // Format sources with document_id and page numbers
-    const sources = searchResults.map((chunk) => ({
-      title: chunk.title || chunk.source,
-      source: chunk.source,
+    // Sources payload: ordinal n maps to context block order below
+    const sources = searchResults.map((chunk, i) => ({
+      n: i + 1,
+      chunk_id: chunk.id,
       document_id: chunk.document_id,
-      subject: chunk.subject || 'General',
-      module: chunk.module || undefined,
+      title: chunk.title || chunk.file_name,
+      file_name: chunk.file_name,
       page: chunk.page_start || undefined,
-      chunk_index: chunk.chunk_index,
+      paragraph_id: chunk.paragraph_id || undefined,
+      subject: chunk.subject || 'General',
+      section: chunk.section || undefined,
+      chunk_type: chunk.chunk_type || 'text',
       similarity: parseFloat((chunk.similarity || 0).toFixed(3)),
     }));
 
-    // Format Reference Material with structured citation anchors
+    // Numbered context blocks so the LLM can cite [[#n]] ordinals
     const contextParts: string[] = [];
     searchResults.forEach((chunk, i) => {
+      const loc = [
+        `file: "${chunk.file_name}"`,
+        `page: ${chunk.page_start || 1}`,
+        chunk.paragraph_id ? `paragraph: ${chunk.paragraph_id}` : null,
+        `docId: "${chunk.document_id}"`,
+        `subject: "${chunk.subject || 'General'}"`,
+      ]
+        .filter(Boolean)
+        .join(', ');
       contextParts.push(
-        `--- Document ${i + 1}: "${chunk.title || chunk.source}" (docId: "${chunk.document_id}", Page: ${chunk.page_start || 1}, Subject: "${chunk.subject || 'General'}") ---\n${chunk.raw_content}`
+        `--- [#${i + 1}] (${loc}) ---\n${chunk.raw_content}`
       );
     });
     const contextBlock = contextParts.join('\n\n');
@@ -160,11 +204,12 @@ export async function POST(req: NextRequest) {
     // Save user chat message asynchronously
     if (session_id) {
       query(
-        `INSERT INTO chat_messages (session_id, role, content)
-         VALUES ($1, 'user', $2);`,
+        `INSERT INTO chat_messages (session_id, role, content) VALUES ($1, 'user', $2);`,
         [session_id, message]
       )
-        .then(() => query('UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1;', [session_id]))
+        .then(() =>
+          query('UPDATE chat_sessions SET updated_at = NOW() WHERE id = $1;', [session_id])
+        )
         .catch((e) => console.error('Failed to save user chat message:', e.message));
     }
 
@@ -175,6 +220,7 @@ export async function POST(req: NextRequest) {
       subject: topChunk?.subject || reqSubject || 'General',
       stream: topChunk?.stream || studentStream || 'General',
       semester: topChunk?.semester || studentSem || 'General',
+      section: topChunk?.section || studentSection || 'General',
       topChunkId: topChunk?.id,
     }).catch(() => {});
 
@@ -192,7 +238,6 @@ export async function POST(req: NextRequest) {
 
     const customStream = new ReadableStream({
       async start(controller) {
-        // Send initial metadata frame containing hybrid sources
         controller.enqueue(
           encoder.encode(`data: ${JSON.stringify({ sources, type: 'metadata' })}\n\n`)
         );
@@ -223,11 +268,9 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          // Persist assistant message in background
           if (session_id && accumulatedResponse.trim()) {
             query(
-              `INSERT INTO chat_messages (session_id, role, content, sources)
-               VALUES ($1, 'assistant', $2, $3);`,
+              `INSERT INTO chat_messages (session_id, role, content, sources) VALUES ($1, 'assistant', $2, $3);`,
               [session_id, accumulatedResponse.trim(), JSON.stringify(sources)]
             ).catch((e) => console.error('Failed to save assistant chat message:', e.message));
           }
@@ -236,7 +279,9 @@ export async function POST(req: NextRequest) {
         } catch (streamErr: any) {
           console.error('SSE Stream error:', streamErr);
           controller.enqueue(
-            encoder.encode(`data: ${JSON.stringify({ error: streamErr.message || 'Streaming failed' })}\n\n`)
+            encoder.encode(
+              `data: ${JSON.stringify({ error: streamErr.message || 'Streaming failed' })}\n\n`
+            )
           );
           controller.close();
         }
@@ -253,6 +298,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     console.error('Query Stream Endpoint Error:', err);
-    return NextResponse.json({ detail: err.message || 'Stream initialization error' }, { status: 500 });
+    return NextResponse.json(
+      { detail: err.message || 'Stream initialization error' },
+      { status: 500 }
+    );
   }
 }

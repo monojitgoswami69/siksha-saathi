@@ -69,7 +69,7 @@ export default function ResourcesPage() {
   const handleDownload = useCallback(async (doc: DocumentInfo) => {
     setDownloadingId(doc.document_id);
     try {
-      await api.documents.download(doc.document_id, doc.source || doc.title || 'document');
+      await api.documents.download(doc.document_id, doc.file_name || doc.title || 'document');
     } catch (err) {
       console.error('Download failed:', err);
       alert('Download failed. Please try again.');
@@ -111,14 +111,14 @@ export default function ResourcesPage() {
         (doc) =>
           doc.title?.toLowerCase().includes(lowerQ) ||
           doc.subject?.toLowerCase().includes(lowerQ) ||
-          doc.source?.toLowerCase().includes(lowerQ)
+          doc.file_name?.toLowerCase().includes(lowerQ)
       );
     }
 
     result.sort((a, b) => {
       if (sortOption === 'name') {
-        const nameA = a.title || a.source || '';
-        const nameB = b.title || b.source || '';
+        const nameA = a.title || a.file_name || '';
+        const nameB = b.title || b.file_name || '';
         return nameA.localeCompare(nameB);
       } else if (sortOption === 'date') {
         const dateA = new Date(a.created_at || 0).getTime();
@@ -283,13 +283,13 @@ export default function ResourcesPage() {
                         </button>
 
                         <h3 className="text-sm font-bold text-slate-800 mb-1 line-clamp-2 leading-snug group-hover:text-[#0d47a1] transition-colors">
-                          {doc.title || doc.source}
+                          {doc.title || doc.file_name}
                         </h3>
                         <p className="text-xs font-semibold text-slate-400 capitalize mb-4 line-clamp-1 flex items-center gap-2">
                           {doc.stream || 'General'}{' '}
                           {doc.semester ? `• Sem ${doc.semester}` : ''}
                           <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">
-                            {getFileType(doc.source || doc.title)}
+                            {getFileType(doc.file_name || doc.title)}
                           </span>
                         </p>
 
@@ -332,19 +332,19 @@ export default function ResourcesPage() {
                         {/* File Icon column */}
                         <div className="w-14 h-14 bg-blue-50 rounded-2xl flex flex-col items-center justify-center shrink-0 border border-blue-100 group-hover:scale-105 transition-transform duration-300">
                           <span className="material-symbols-outlined text-[#0d47a1] text-2xl">
-                            {getFileType(doc.source || doc.title) === 'PDF'
+                            {getFileType(doc.file_name || doc.title) === 'PDF'
                               ? 'picture_as_pdf'
                               : 'description'}
                           </span>
                           <span className="text-[9px] font-black uppercase text-[#0d47a1]/70 mt-0.5 tracking-tighter line-clamp-1">
-                            {getFileType(doc.source || doc.title)}
+                            {getFileType(doc.file_name || doc.title)}
                           </span>
                         </div>
 
                         {/* Info column */}
                         <div className="flex-1 min-w-0 flex flex-col justify-center">
                           <h3 className="text-[15px] font-bold text-slate-800 truncate group-hover:text-[#0d47a1] transition-colors leading-tight mb-1">
-                            {doc.title || doc.source}
+                            {doc.title || doc.file_name}
                           </h3>
                           <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
                             <span className="bg-slate-100 px-2 py-0.5 rounded-lg text-slate-600 border border-slate-200/50">

@@ -36,6 +36,7 @@ export async function logStudentQuery({
   subject,
   stream,
   semester,
+  section,
   topChunkId,
 }: {
   userId?: string;
@@ -43,13 +44,22 @@ export async function logStudentQuery({
   subject?: string;
   stream?: string;
   semester?: string;
+  section?: string;
   topChunkId?: string;
 }): Promise<void> {
   try {
     await query(
-      `INSERT INTO query_logs (user_id, query_text, subject, stream, semester, top_chunk_id)
-       VALUES ($1, $2, $3, $4, $5, $6);`,
-      [userId || null, queryText, subject || 'General', stream || 'General', semester || 'General', topChunkId || null]
+      `INSERT INTO query_logs (user_id, query_text, subject, stream, semester, section, top_chunk_id)
+       VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+      [
+        userId || null,
+        queryText,
+        subject || 'General',
+        stream || 'General',
+        semester || 'General',
+        section || 'General',
+        topChunkId || null,
+      ]
     );
   } catch (err: any) {
     console.error('Query log error:', err.message);

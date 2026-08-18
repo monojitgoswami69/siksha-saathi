@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       });
     } else {
       const dbRes = await query(
-        'SELECT id, email, display_name, name, roll, stream, sem, batch, avatar_url FROM student_users WHERE id = $1;',
+        'SELECT id, email, display_name, name, roll, stream, sem, section, avatar_url FROM student_users WHERE id = $1;',
         [user.uid]
       );
       if (dbRes.rowCount === 0) return NextResponse.json({ detail: 'User not found' }, { status: 404 });
@@ -41,7 +41,7 @@ export async function GET(req: NextRequest) {
         roll: row.roll,
         stream: row.stream,
         sem: row.sem,
-        batch: row.batch,
+        section: row.section,
         avatar_url: row.avatar_url,
         scope: 'student',
       });

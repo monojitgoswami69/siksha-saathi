@@ -43,7 +43,7 @@ export const studentUsers = pgTable('student_users', {
   roll: varchar('roll', { length: 100 }),
   stream: varchar('stream', { length: 100 }).notNull().default('cse'),
   sem: varchar('sem', { length: 20 }).notNull().default('1'),
-  batch: varchar('batch', { length: 50 }),
+  section: varchar('section', { length: 50 }),
   avatarUrl: varchar('avatar_url', { length: 500 }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
@@ -55,7 +55,7 @@ export const studentUsers = pgTable('student_users', {
 export const documents = pgTable('documents', {
   id: uuid('id').defaultRandom().primaryKey(),
   title: varchar('title', { length: 255 }).notNull(),
-  source: varchar('source', { length: 255 }).notNull(),
+  fileName: varchar('file_name', { length: 255 }).notNull(),
   mimeType: varchar('mime_type', { length: 100 }),
   fileSizeBytes: bigint('file_size_bytes', { mode: 'number' }).default(0),
   storageProvider: varchar('storage_provider', { length: 50 }).default('r2'),
@@ -65,6 +65,7 @@ export const documents = pgTable('documents', {
   dropboxSharedLink: varchar('dropbox_shared_link', { length: 500 }),
   stream: varchar('stream', { length: 100 }),
   semester: varchar('semester', { length: 20 }),
+  section: varchar('section', { length: 50 }),
   subject: varchar('subject', { length: 200 }),
   module: varchar('module', { length: 200 }),
   uploadedBy: uuid('uploaded_by'),
@@ -91,20 +92,60 @@ export const documentChunks = pgTable(
     rawContent: text('raw_content').notNull(),
     pageStart: integer('page_start'),
     pageEnd: integer('page_end'),
-    source: varchar('source', { length: 255 }).notNull(),
+    paragraphId: varchar('paragraph_id', { length: 100 }),
+    chunkType: varchar('chunk_type', { length: 30 }).default('text'),
+    charStart: integer('char_start'),
+    charEnd: integer('char_end'),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
     title: varchar('title', { length: 255 }),
     stream: varchar('stream', { length: 100 }),
     semester: varchar('semester', { length: 20 }),
+    section: varchar('section', { length: 50 }),
     subject: varchar('subject', { length: 200 }),
     module: varchar('module', { length: 200 }),
     embedding: vector('embedding', { dimensions: 768 }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   },
   (table) => [
-    index('idx_chunks_metadata').on(table.stream, table.semester, table.subject),
-    index('idx_chunks_doc_id').on(table.documentId),
+    index('idx_chunks_metadata').on(table.stream, table.semester, table.section, table.subject),
+    index('idx_chunks_doc_id').on(table.documentId, table.chunkIndex),
     index('idx_chunks_embedding').using('hnsw', table.embedding.op('vector_cosine_ops')),
     index('idx_chunks_fts').using('gin', sql`to_tsvector('english', ${table.rawContent})`),
+  ]
+);
+
+/**
+ * 4b. Document Images (image chunks: extracted/OCR'd images, citable & retrievable)
+ */
+export const documentImages = pgTable(
+  'document_images',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    chunkId: uuid('chunk_id')
+      .references(() => documentChunks.id, { onDelete: 'cascade' })
+      .notNull(),
+    page: integer('page'),
+    paragraphId: varchar('paragraph_id', { length: 100 }),
+    storageProvider: varchar('storage_provider', { length: 50 }).default('r2'),
+    fileKey: varchar('file_key', { length: 500 }),
+    previewUrl: varchar('preview_url', { length: 1000 }),
+    mimeType: varchar('mime_type', { length: 100 }),
+    ocrText: text('ocr_text'),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    stream: varchar('stream', { length: 100 }),
+    semester: varchar('semester', { length: 20 }),
+    section: varchar('section', { length: 50 }),
+    subject: varchar('subject', { length: 200 }),
+    embedding: vector('embedding', { dimensions: 768 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index('idx_doc_images_doc').on(table.documentId),
+    index('idx_doc_images_chunk').on(table.chunkId),
+    index('idx_doc_images_embedding').using('hnsw', table.embedding.op('vector_cosine_ops')),
   ]
 );
 
@@ -197,11 +238,12 @@ export const queryLogs = pgTable(
     subject: varchar('subject', { length: 200 }),
     stream: varchar('stream', { length: 100 }),
     semester: varchar('semester', { length: 20 }),
+    section: varchar('section', { length: 50 }),
     topChunkId: uuid('top_chunk_id').references(() => documentChunks.id, { onDelete: 'set null' }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   },
   (table) => [
-    index('idx_query_logs_analytics').on(table.stream, table.semester, table.subject, table.createdAt),
+    index('idx_query_logs_analytics').on(table.stream, table.semester, table.section, table.subject, table.createdAt),
   ]
 );
 
@@ -230,12 +272,25 @@ export const auditLogs = pgTable(
  */
 export const documentsRelations = relations(documents, ({ many }) => ({
   chunks: many(documentChunks),
+  images: many(documentImages),
 }));
 
-export const documentChunksRelations = relations(documentChunks, ({ one }) => ({
+export const documentChunksRelations = relations(documentChunks, ({ one, many }) => ({
   document: one(documents, {
     fields: [documentChunks.documentId],
     references: [documents.id],
+  }),
+  images: many(documentImages),
+}));
+
+export const documentImagesRelations = relations(documentImages, ({ one }) => ({
+  document: one(documents, {
+    fields: [documentImages.documentId],
+    references: [documents.id],
+  }),
+  chunk: one(documentChunks, {
+    fields: [documentImages.chunkId],
+    references: [documentChunks.id],
   }),
 }));
 

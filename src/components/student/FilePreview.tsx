@@ -8,15 +8,28 @@ interface FilePreviewProps {
   document: DocumentInfo | null;
   previewUrl: string | null;
   initialPage?: number;
+  highlightedChunk?: {
+    text: string;
+    paragraph_id?: string;
+    chunk_type?: string;
+    page?: number;
+  } | null;
   onClose: () => void;
   onDownload?: () => void;
 }
 
-export function FilePreview({ document, previewUrl, initialPage, onClose, onDownload }: FilePreviewProps) {
+export function FilePreview({
+  document,
+  previewUrl,
+  initialPage,
+  highlightedChunk,
+  onClose,
+  onDownload,
+}: FilePreviewProps) {
   if (!document) return null;
 
-  const isPdf = document.source?.toLowerCase().endsWith('.pdf') || document.mime_type?.includes('pdf');
-  const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(document.source) || document.mime_type?.includes('image');
+  const isPdf = document.file_name?.toLowerCase().endsWith('.pdf') || document.mime_type?.includes('pdf');
+  const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(document.file_name || '') || document.mime_type?.includes('image');
 
   const pdfUrlWithPage = previewUrl
     ? `${previewUrl}${initialPage ? `#page=${initialPage}` : '#toolbar=0'}`
@@ -32,7 +45,7 @@ export function FilePreview({ document, previewUrl, initialPage, onClose, onDown
               <FileText className="w-5 h-5" />
             </div>
             <div className="min-w-0">
-              <h3 className="font-bold text-slate-800 text-sm truncate">{document.title || document.source}</h3>
+              <h3 className="font-bold text-slate-800 text-sm truncate">{document.title || document.file_name}</h3>
               <p className="text-xs text-slate-500">
                 {document.subject || 'General'} • {document.total_chunks || document.chunks_count || 0} chunks
               </p>
@@ -69,6 +82,30 @@ export function FilePreview({ document, previewUrl, initialPage, onClose, onDown
             </button>
           </div>
         </div>
+
+        {/* Cited passage highlight panel */}
+        {highlightedChunk?.text && (
+          <div className="px-4 pt-3 bg-indigo-50/60 border-b border-indigo-100">
+            <div className="max-h-44 overflow-y-auto rounded-xl border border-indigo-200 bg-white p-3 shadow-sm">
+              <div className="flex items-center justify-between mb-1.5">
+                <span className="inline-flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-wide text-indigo-700">
+                  <FileText className="w-3 h-3" />
+                  Cited passage
+                  {highlightedChunk.chunk_type === 'image' && (
+                    <span className="px-1 py-0.5 rounded bg-amber-100 text-amber-700 text-[9px]">OCR</span>
+                  )}
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  {highlightedChunk.page ? `Page ${highlightedChunk.page}` : ''}
+                  {highlightedChunk.paragraph_id ? ` • ¶ ${highlightedChunk.paragraph_id}` : ''}
+                </span>
+              </div>
+              <p className="text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
+                <mark className="bg-yellow-200/70 rounded px-0.5">{highlightedChunk.text}</mark>
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Content Body */}
         <div className="flex-1 bg-slate-100 p-2 overflow-hidden flex items-center justify-center">

@@ -12,12 +12,15 @@ export async function POST(req: NextRequest) {
     }
 
     const res = await query(
-      'SELECT id, email, password_hash, display_name, name, roll, stream, sem, batch, avatar_url FROM student_users WHERE email = $1;',
+      'SELECT id, email, password_hash, display_name, name, roll, stream, sem, section, avatar_url FROM student_users WHERE email = $1;',
       [email.trim().toLowerCase()]
     );
 
     if (res.rowCount === 0) {
-      return NextResponse.json({ detail: 'Invalid email or password' }, { status: 401 });
+      return NextResponse.json(
+        { detail: 'Your email is not enrolled. Please contact your administrator to get access.' },
+        { status: 403 }
+      );
     }
 
     const student = res.rows[0];
@@ -52,7 +55,7 @@ export async function POST(req: NextRequest) {
         roll: student.roll,
         stream: student.stream,
         sem: student.sem,
-        batch: student.batch,
+        section: student.section,
         avatar_url: student.avatar_url,
       },
     });

@@ -11,7 +11,17 @@ export async function PUT(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { name, displayName, stream, sem, roll, batch, currentPassword, newPassword } = body;
+    const { name, displayName, stream, currentPassword, newPassword } = body;
+
+    // Students are NOT permitted to change academic identity fields
+    // (stream / sem / section / roll) to preserve inter-section privacy.
+    // Only display name and password are self-service editable.
+    if (user.scope === 'student' && (body.stream || body.sem || body.section || body.roll)) {
+      return NextResponse.json(
+        { detail: 'Academic details (stream/semester/section/roll) cannot be self-edited. Contact your administrator.' },
+        { status: 403 }
+      );
+    }
 
     // 1. Handle Password Update if requested
     if (newPassword) {
@@ -53,13 +63,9 @@ export async function PUT(req: NextRequest) {
         `UPDATE student_users
          SET display_name = COALESCE($1, display_name),
              name = COALESCE($2, name),
-             stream = COALESCE($3, stream),
-             sem = COALESCE($4, sem),
-             roll = COALESCE($5, roll),
-             batch = COALESCE($6, batch),
              updated_at = NOW()
-         WHERE id = $7;`,
-        [displayName || name || null, name || null, stream || null, sem || null, roll || null, batch || null, user.uid]
+         WHERE id = $3;`,
+        [displayName || name || null, name || null, user.uid]
       );
     } else {
       await query(

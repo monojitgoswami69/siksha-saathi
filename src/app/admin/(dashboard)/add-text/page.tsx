@@ -25,7 +25,7 @@ export default function AddTextPage() {
     try {
       await api.documents.ingest({
         title: title.trim() || 'Raw Text Material',
-        source: `${(title.trim() || 'notes').toLowerCase().replace(/\s+/g, '_')}.txt`,
+        file_name: `${(title.trim() || 'notes').toLowerCase().replace(/\s+/g, '_')}.txt`,
         content: content.trim(),
         stream,
         semester,

@@ -15,7 +15,7 @@ export async function GET(
     const { documentId } = await params;
 
     const res = await query(
-      `SELECT id, title, source, mime_type, status, processing_progress, total_chunks, error_message, created_at
+      `SELECT id, title, file_name, mime_type, status, processing_progress, total_chunks, error_message, created_at
        FROM documents
        WHERE id = $1;`,
       [documentId]
@@ -29,7 +29,7 @@ export async function GET(
     return NextResponse.json({
       document_id: doc.id,
       title: doc.title,
-      source: doc.source,
+      file_name: doc.file_name,
       mime_type: doc.mime_type,
       status: doc.status || 'ready',
       processing_progress: doc.processing_progress || 0,

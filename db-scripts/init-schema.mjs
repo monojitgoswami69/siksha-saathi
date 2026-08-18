@@ -108,11 +108,12 @@ async function initSchema() {
         roll VARCHAR(100),
         stream VARCHAR(100) NOT NULL DEFAULT 'cse',
         sem VARCHAR(20) NOT NULL DEFAULT '1',
-        batch VARCHAR(50),
+        section VARCHAR(50),
         avatar_url VARCHAR(500),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
         updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+      ALTER TABLE student_users ADD COLUMN IF NOT EXISTS section VARCHAR(50);
     `);
     console.log('   ✅ Table: student_users');
 
@@ -121,7 +122,7 @@ async function initSchema() {
       CREATE TABLE IF NOT EXISTS documents (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         title VARCHAR(255) NOT NULL,
-        source VARCHAR(255) NOT NULL,
+        file_name VARCHAR(255) NOT NULL,
         mime_type VARCHAR(100),
         file_size_bytes BIGINT DEFAULT 0,
         storage_provider VARCHAR(50) DEFAULT 'r2',
@@ -131,6 +132,7 @@ async function initSchema() {
         dropbox_shared_link VARCHAR(500),
         stream VARCHAR(100),
         semester VARCHAR(20),
+        section VARCHAR(50),
         subject VARCHAR(200),
         module VARCHAR(200),
         uploaded_by UUID,
@@ -139,9 +141,20 @@ async function initSchema() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
 
+      -- Rename legacy source -> file_name (idempotent: only if source still exists)
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='source')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='documents' AND column_name='file_name')
+        THEN
+          ALTER TABLE documents RENAME COLUMN source TO file_name;
+        END IF;
+      END$$;
+
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS storage_provider VARCHAR(50) DEFAULT 'r2';
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS file_key VARCHAR(500);
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS preview_url VARCHAR(1000);
+      ALTER TABLE documents ADD COLUMN IF NOT EXISTS section VARCHAR(50);
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS status VARCHAR(50) DEFAULT 'ready';
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS error_message TEXT;
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS processing_progress INT DEFAULT 0;
@@ -158,17 +171,72 @@ async function initSchema() {
         raw_content TEXT NOT NULL,
         page_start INT,
         page_end INT,
-        source VARCHAR(255) NOT NULL,
+        paragraph_id VARCHAR(100),
+        chunk_type VARCHAR(30) DEFAULT 'text',
+        char_start INT,
+        char_end INT,
+        file_name VARCHAR(255) NOT NULL,
         title VARCHAR(255),
         stream VARCHAR(100),
         semester VARCHAR(20),
+        section VARCHAR(50),
         subject VARCHAR(200),
         module VARCHAR(200),
         embedding vector(768),
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
+
+      -- Rename legacy source -> file_name on chunks (idempotent)
+      DO $$
+      BEGIN
+        IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='source')
+           AND NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='file_name')
+        THEN
+          ALTER TABLE document_chunks RENAME COLUMN source TO file_name;
+        END IF;
+      END$$;
+
+      ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS paragraph_id VARCHAR(100);
+      ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS chunk_type VARCHAR(30) DEFAULT 'text';
+      ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS char_start INT;
+      ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS char_end INT;
+      ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS section VARCHAR(50);
     `);
     console.log('   ✅ Table: document_chunks');
+
+    // 5b. Document Images (image chunks: extracted/OCR'd images, citable & retrievable)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS document_images (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+        chunk_id UUID REFERENCES document_chunks(id) ON DELETE CASCADE,
+        page INT,
+        paragraph_id VARCHAR(100),
+        storage_provider VARCHAR(50) DEFAULT 'r2',
+        file_key VARCHAR(500),
+        preview_url VARCHAR(1000),
+        mime_type VARCHAR(100),
+        ocr_text TEXT,
+        file_name VARCHAR(255) NOT NULL,
+        stream VARCHAR(100),
+        semester VARCHAR(20),
+        section VARCHAR(50),
+        subject VARCHAR(200),
+        embedding vector(768),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_doc_images_doc ON document_images (document_id);
+      CREATE INDEX IF NOT EXISTS idx_doc_images_chunk ON document_images (chunk_id);
+    `);
+    try {
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_doc_images_embedding ON document_images
+        USING hnsw (embedding vector_cosine_ops);
+      `);
+    } catch (e) {
+      console.warn('   ⚠️ HNSW image index note:', e.message);
+    }
+    console.log('   ✅ Table: document_images');
 
     // 6. Chat Sessions & Messages
     await client.query(`
@@ -233,6 +301,7 @@ async function initSchema() {
         subject VARCHAR(200),
         stream VARCHAR(100),
         semester VARCHAR(20),
+        section VARCHAR(50),
         top_chunk_id UUID REFERENCES document_chunks(id) ON DELETE SET NULL,
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
@@ -253,11 +322,15 @@ async function initSchema() {
     // 10. Indexes
     console.log('⚡ Creating indexes...');
     await client.query(`
-      CREATE INDEX IF NOT EXISTS idx_chunks_metadata ON document_chunks (stream, semester, subject);
-      CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON document_chunks (document_id);
+      -- Refresh metadata index to include section (drop old, recreate)
+      DROP INDEX IF EXISTS idx_chunks_metadata;
+      CREATE INDEX IF NOT EXISTS idx_chunks_metadata ON document_chunks (stream, semester, section, subject);
+      DROP INDEX IF EXISTS idx_chunks_doc_id;
+      CREATE INDEX IF NOT EXISTS idx_chunks_doc_id ON document_chunks (document_id, chunk_index);
       CREATE INDEX IF NOT EXISTS idx_chat_messages_session ON chat_messages (session_id, created_at ASC);
       CREATE INDEX IF NOT EXISTS idx_quiz_results_user ON quiz_results (user_id, submitted_at DESC);
-      CREATE INDEX IF NOT EXISTS idx_query_logs_analytics ON query_logs (stream, semester, subject, created_at);
+      DROP INDEX IF EXISTS idx_query_logs_analytics;
+      CREATE INDEX IF NOT EXISTS idx_query_logs_analytics ON query_logs (stream, semester, section, subject, created_at);
       CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs (created_at DESC);
     `);
 

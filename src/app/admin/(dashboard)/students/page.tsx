@@ -26,8 +26,7 @@ export default function StudentsPage() {
 
   // Enroll modal state
   const [csvText, setCsvText] = useState('');
-  const [enrollStream, setEnrollStream] = useState('cse');
-  const [enrollSem, setEnrollSem] = useState('1');
+  const [enrollPassword, setEnrollPassword] = useState('');
   const [enrolling, setEnrolling] = useState(false);
 
   const loadStudents = async () => {
@@ -50,19 +49,22 @@ export default function StudentsPage() {
 
   const handleEnrollSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!csvText.trim()) return;
+    if (!csvText.trim() || !enrollPassword.trim()) return;
 
     setEnrolling(true);
     try {
       const res = await api.admin.enrollStudents({
         csv_data: csvText,
-        stream: enrollStream,
-        semester: enrollSem,
+        initial_password: enrollPassword,
       });
 
-      showSuccess(res.message || `Successfully enrolled ${res.enrolled} students`);
+      const msg = res.errors?.length
+        ? `${res.message} (${res.errors.length} rejected: ${res.errors.slice(0, 3).join('; ')}${res.errors.length > 3 ? '…' : ''})`
+        : res.message || `Successfully enrolled ${res.enrolled} students`;
+      showSuccess(msg);
       setShowEnrollModal(false);
       setCsvText('');
+      setEnrollPassword('');
       loadStudents();
     } catch (err: any) {
       showError(err.message || 'Enrollment failed');
@@ -85,7 +87,7 @@ export default function StudentsPage() {
         <div>
           <h1 className="text-2xl font-extrabold text-white">Student Directory & Enrollment</h1>
           <p className="text-xs text-slate-400 mt-1">
-            Manage enrolled college student profiles, batches, and batch import via CSV/TSV spreadsheets.
+            Manage enrolled college student profiles and sections, with bulk CSV/TSV import.
           </p>
         </div>
 
@@ -158,7 +160,7 @@ export default function StudentsPage() {
                   <th className="py-3 px-4">University Email</th>
                   <th className="py-3 px-4">Roll Number</th>
                   <th className="py-3 px-4">Stream / Sem</th>
-                  <th className="py-3 px-4">Academic Batch</th>
+                  <th className="py-3 px-4">Section</th>
                   <th className="py-3 px-4">Enrolled Date</th>
                 </tr>
               </thead>
@@ -179,7 +181,7 @@ export default function StudentsPage() {
                       </span>{' '}
                       <span className="text-slate-400">/ Sem {st.sem || '1'}</span>
                     </td>
-                    <td className="py-3.5 px-4 text-slate-400">{st.batch || '2024-2028'}</td>
+                    <td className="py-3.5 px-4 text-slate-400 uppercase font-semibold">{st.section || '—'}</td>
                     <td className="py-3.5 px-4 text-slate-500">{formatDate(st.created_at)}</td>
                   </tr>
                 ))}
@@ -209,34 +211,27 @@ export default function StudentsPage() {
             </div>
 
             <form onSubmit={handleEnrollSubmit} className="space-y-4">
-              <div className="grid grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Default Stream</label>
-                  <select
-                    value={enrollStream}
-                    onChange={(e) => setEnrollStream(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                  >
-                    <option value="cse">CSE</option>
-                    <option value="it">IT</option>
-                    <option value="ece">ECE</option>
-                    <option value="ee">EE</option>
-                  </select>
-                </div>
-                <div>
-                  <label className="block text-xs font-bold text-slate-400 uppercase mb-1">Default Semester</label>
-                  <select
-                    value={enrollSem}
-                    onChange={(e) => setEnrollSem(e.target.value)}
-                    className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
-                  >
-                    {['1', '2', '3', '4', '5', '6', '7', '8'].map((s) => (
-                      <option key={s} value={s}>
-                        Semester {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
+              <div className="bg-amber-950/40 border border-amber-800/60 rounded-xl p-3 text-[11px] text-amber-200/90 leading-relaxed">
+                <strong className="text-amber-200">All fields are required per row.</strong> Required CSV columns:{' '}
+                <code className="text-amber-100">email, name, roll, stream, sem, section</code>. Rows missing any field
+                are rejected. An optional per-row <code className="text-amber-100">password</code> column overrides the
+                initial password below.
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-400 uppercase mb-1">
+                  Initial Password <span className="text-rose-400">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  minLength={6}
+                  value={enrollPassword}
+                  onChange={(e) => setEnrollPassword(e.target.value)}
+                  placeholder="e.g. student123 (applied to all enrolled rows)"
+                  className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-mono focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">Students can change this after first login.</p>
               </div>
 
               <div>
@@ -248,7 +243,7 @@ export default function StudentsPage() {
                   required
                   value={csvText}
                   onChange={(e) => setCsvText(e.target.value)}
-                  placeholder={`email,name,roll,stream,sem\nstudent1@university.edu,John Doe,CS21001,cse,1\nstudent2@university.edu,Jane Smith,CS21002,cse,1`}
+                  placeholder={`email,name,roll,stream,sem,section\nstudent1@university.edu,John Doe,CS21001,cse,1,cse1\nstudent2@university.edu,Jane Smith,CS21002,cse,1,cse1`}
                   className="w-full p-3 bg-slate-950 border border-slate-800 rounded-xl text-xs font-mono text-slate-200 focus:ring-2 focus:ring-indigo-500/30 outline-none"
                 />
               </div>
@@ -263,7 +258,7 @@ export default function StudentsPage() {
                 </button>
                 <button
                   type="submit"
-                  disabled={enrolling || !csvText.trim()}
+                  disabled={enrolling || !csvText.trim() || !enrollPassword.trim()}
                   className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40"
                 >
                   {enrolling ? 'Enrolling...' : 'Import & Create Accounts'}

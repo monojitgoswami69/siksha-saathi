@@ -28,10 +28,15 @@ function ChatContent() {
         userEmail={user?.email}
       />
       <ChatInput
-        onSendMessage={(text) =>
-          handleSendMessage(text, documentId ? { document_id: documentId } : undefined)
+        onSendMessage={(text, filter) =>
+          handleSendMessage(text, {
+            document_id: documentId || filter?.document_id,
+            subject: filter?.subject,
+            file_name: filter?.file_name,
+          })
         }
         isStreaming={isStreaming}
+        presetDocumentId={documentId}
       />
     </div>
   );

@@ -10,10 +10,9 @@ interface StudentAuthContextValue {
   isAuthenticated: boolean;
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
-  register: (data: any) => Promise<{ success: boolean; error?: string }>;
   loginWithGoogle: (credential: string | { idToken?: string; accessToken?: string }) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
-  updateProfile: (data: Partial<UserProfile>) => Promise<boolean>;
+  updateProfile: (data: Partial<UserProfile> & { currentPassword?: string; newPassword?: string }) => Promise<boolean>;
   refreshProfile: () => Promise<void>;
 }
 
@@ -41,7 +40,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
           roll: fresh.roll,
           stream: fresh.stream || 'cse',
           sem: fresh.sem || '1',
-          batch: fresh.batch,
+          section: fresh.section,
           semester: fresh.sem || '1',
           rollNumber: fresh.roll,
           avatar_url: fresh.avatar_url,
@@ -81,25 +80,6 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
     }
   };
 
-  const register = async (data: any) => {
-    try {
-      const res = await api.auth.studentRegister(data);
-      setUser({
-        uid: res.uid,
-        email: res.email,
-        displayName: res.display_name,
-        role: 'student',
-        token: res.token || '',
-      });
-      if (res.profile) {
-        setProfile(res.profile);
-      }
-      return { success: true };
-    } catch (err: any) {
-      return { success: false, error: err.message || 'Registration failed' };
-    }
-  };
-
   const loginWithGoogle = async (credential: string | { idToken?: string; accessToken?: string }) => {
     try {
       const res = await api.auth.googleAuth(credential);
@@ -116,6 +96,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         roll: res.roll,
         stream: res.stream || 'cse',
         sem: res.sem || '1',
+        section: res.section,
         avatar_url: res.avatar_url,
       });
       return { success: true };
@@ -154,7 +135,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
           roll: fresh.roll,
           stream: fresh.stream || 'cse',
           sem: fresh.sem || '1',
-          batch: fresh.batch,
+          section: fresh.section,
           semester: fresh.sem || '1',
           rollNumber: fresh.roll,
           avatar_url: fresh.avatar_url,
@@ -171,7 +152,6 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
         isAuthenticated: !!user,
         isLoading,
         login,
-        register,
         loginWithGoogle,
         logout,
         updateProfile,

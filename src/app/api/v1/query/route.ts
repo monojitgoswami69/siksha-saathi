@@ -18,6 +18,7 @@ export async function POST(req: NextRequest) {
       subject: reqSubject,
       stream: reqStream,
       semester: reqSem,
+      section: reqSection,
     } = body;
 
     if (!queryText) {
@@ -29,7 +30,7 @@ export async function POST(req: NextRequest) {
     // Parallel: generate embedding + lookup student profile
     const [queryEmbedding, studentRes] = await Promise.all([
       getEmbedding(queryText),
-      query('SELECT stream, sem FROM student_users WHERE id = $1;', [user.uid]).catch(() => ({
+      query('SELECT stream, sem, section FROM student_users WHERE id = $1;', [user.uid]).catch(() => ({
         rowCount: 0,
         rows: [],
       })),
@@ -37,17 +38,19 @@ export async function POST(req: NextRequest) {
 
     let studentStream = reqStream;
     let studentSem = reqSem;
+    let studentSection = reqSection;
     if (studentRes.rowCount && studentRes.rowCount > 0) {
       const profile = studentRes.rows[0] as any;
       studentStream = studentStream || profile.stream;
       studentSem = studentSem || profile.sem;
+      studentSection = studentSection || profile.section;
     }
 
     const vectorStr = formatVector(queryEmbedding);
 
     let sql = `
-      SELECT id, document_id, raw_content, title, source, subject, module,
-             page_start, page_end, stream, semester,
+      SELECT id, document_id, raw_content, title, file_name, subject, module,
+             page_start, page_end, paragraph_id, chunk_type, stream, semester, section,
              1 - (embedding <=> $1) as similarity
       FROM document_chunks
       WHERE embedding IS NOT NULL
@@ -65,6 +68,11 @@ export async function POST(req: NextRequest) {
       params.push(studentSem);
       pIdx++;
     }
+    if (studentSection && studentSection !== 'All') {
+      sql += ` AND (section = $${pIdx} OR section = 'General' OR section IS NULL)`;
+      params.push(studentSection);
+      pIdx++;
+    }
     if (reqSubject && reqSubject !== 'All Subjects') {
       sql += ` AND (LOWER(subject) = LOWER($${pIdx}) OR subject = 'General' OR subject IS NULL)`;
       params.push(reqSubject);
@@ -77,12 +85,18 @@ export async function POST(req: NextRequest) {
     const res = await query(sql, params);
     const filtered = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD);
 
-    const sources = filtered.map((r) => ({
-      title: r.title || r.source,
-      source: r.source,
+    const sources = filtered.map((r, i) => ({
+      n: i + 1,
+      chunk_id: r.id,
+      document_id: r.document_id,
+      title: r.title || r.file_name,
+      file_name: r.file_name,
       subject: r.subject || 'General',
       module: r.module || undefined,
       page: r.page_start || undefined,
+      paragraph_id: r.paragraph_id || undefined,
+      section: r.section || undefined,
+      chunk_type: r.chunk_type || 'text',
       similarity: parseFloat((r.similarity || 0).toFixed(3)),
     }));
 

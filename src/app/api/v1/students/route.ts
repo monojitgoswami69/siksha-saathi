@@ -16,8 +16,9 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     const stream = searchParams.get('stream');
     const semester = searchParams.get('semester') || searchParams.get('sem');
+    const section = searchParams.get('section');
 
-    let sql = 'SELECT id as uid, email, display_name, name, roll, stream, sem, batch, created_at FROM student_users WHERE 1=1';
+    let sql = 'SELECT id as uid, email, display_name, name, roll, stream, sem, section, created_at FROM student_users WHERE 1=1';
     const params: any[] = [];
     let pIdx = 1;
 
@@ -29,6 +30,11 @@ export async function GET(req: NextRequest) {
     if (semester && semester !== 'All') {
       sql += ` AND sem = $${pIdx}`;
       params.push(semester);
+      pIdx++;
+    }
+    if (section && section !== 'All') {
+      sql += ` AND LOWER(section) = LOWER($${pIdx})`;
+      params.push(section);
       pIdx++;
     }
 
@@ -44,7 +50,7 @@ export async function GET(req: NextRequest) {
         roll: s.roll || 'N/A',
         stream: s.stream || '',
         sem: s.sem || '',
-        batch: s.batch || '',
+        section: s.section || '',
         created_at: s.created_at ? new Date(s.created_at).toISOString() : new Date().toISOString(),
       })),
       total: res.rowCount,

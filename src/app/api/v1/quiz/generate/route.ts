@@ -20,23 +20,25 @@ export async function POST(req: NextRequest) {
       semester: reqSem,
     } = body;
 
-    // Auto-lookup student profile for stream/semester scoping
+    // Auto-lookup student profile for stream/semester/section scoping
     let studentStream = reqStream;
     let studentSem = reqSem;
+    let studentSection = body.section;
     try {
       const profileRes = await query(
-        'SELECT stream, sem FROM student_users WHERE id = $1;',
+        'SELECT stream, sem, section FROM student_users WHERE id = $1;',
         [user.uid]
       );
       if (profileRes.rowCount && profileRes.rowCount > 0) {
         const profile = profileRes.rows[0] as any;
         studentStream = studentStream || profile.stream;
         studentSem = studentSem || profile.sem;
+        studentSection = studentSection || profile.section;
       }
     } catch {}
 
     // Collect chunks from database — scoped by student's enrollment
-    let sql = `SELECT raw_content, title, source, subject FROM document_chunks WHERE 1=1`;
+    let sql = `SELECT raw_content, title, file_name, subject FROM document_chunks WHERE 1=1`;
     const params: any[] = [];
     let pIdx = 1;
 
@@ -53,7 +55,7 @@ export async function POST(req: NextRequest) {
         pIdx++;
       }
 
-      // Mandatory stream/semester segregation
+      // Mandatory stream/semester/section segregation
       if (studentStream && studentStream !== 'All') {
         sql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;
         params.push(studentStream);
@@ -64,6 +66,11 @@ export async function POST(req: NextRequest) {
         params.push(studentSem);
         pIdx++;
       }
+      if (studentSection && studentSection !== 'All') {
+        sql += ` AND (section = $${pIdx} OR section = 'General' OR section IS NULL)`;
+        params.push(studentSection);
+        pIdx++;
+      }
     }
 
     sql += ` ORDER BY chunk_index ASC LIMIT 25;`;
@@ -72,7 +79,7 @@ export async function POST(req: NextRequest) {
     let contextText = '';
     if (res.rowCount && res.rowCount > 0) {
       contextText = res.rows
-        .map((r, i) => `--- Section ${i + 1} (${r.title || r.source}) ---\n${r.raw_content}`)
+        .map((r, i) => `--- Section ${i + 1} (${r.title || r.file_name}) ---\n${r.raw_content}`)
         .join('\n\n');
     } else {
       contextText = `Course syllabus and overview for ${subject}. Key concepts, architectures, definitions, and operational principles.`;

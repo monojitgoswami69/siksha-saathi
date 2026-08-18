@@ -2,7 +2,7 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, User, GraduationCap, Hash, BookOpen, Layers, Save, Check } from 'lucide-react';
+import { X, User, GraduationCap, Hash, BookOpen, Layers, Save, Lock, ShieldCheck } from 'lucide-react';
 import { useStudentAuth } from '@/context/StudentAuthContext';
 import { useToast } from '@/context/ToastContext';
 
@@ -17,23 +17,14 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
 
   const [formData, setFormData] = useState({
     name: profile?.name || user?.displayName || '',
-    roll: profile?.roll || '',
-    stream: profile?.stream || 'cse',
-    sem: profile?.sem || '1',
-    batch: profile?.batch || '2024-2028',
   });
-
+  const [passwords, setPasswords] = useState({ currentPassword: '', newPassword: '' });
   const [saving, setSaving] = useState(false);
 
   React.useEffect(() => {
     if (isOpen) {
-      setFormData({
-        name: profile?.name || user?.displayName || '',
-        roll: profile?.roll || '',
-        stream: profile?.stream || 'cse',
-        sem: profile?.sem || '1',
-        batch: profile?.batch || '2024-2028',
-      });
+      setFormData({ name: profile?.name || user?.displayName || '' });
+      setPasswords({ currentPassword: '', newPassword: '' });
     }
   }, [isOpen, profile, user]);
 
@@ -41,9 +32,15 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
     e.preventDefault();
     setSaving(true);
     try {
-      const ok = await updateProfile(formData);
+      const payload: Record<string, any> = { name: formData.name, displayName: formData.name };
+      if (passwords.newPassword) {
+        payload.currentPassword = passwords.currentPassword;
+        payload.newPassword = passwords.newPassword;
+      }
+      const ok = await updateProfile(payload);
       if (ok) {
         showSuccess('Profile updated successfully');
+        setPasswords({ currentPassword: '', newPassword: '' });
         onClose();
       } else {
         showError('Failed to update profile');
@@ -56,6 +53,27 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
   };
 
   if (!isOpen) return null;
+
+  const readOnlyField = (
+    icon: React.ReactNode,
+    label: string,
+    value: string | undefined
+  ) => (
+    <div>
+      <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-1.5">
+        {label}
+      </label>
+      <div className="relative">
+        {icon}
+        <input
+          type="text"
+          value={value || '—'}
+          readOnly
+          className="w-full pl-9 pr-3.5 py-2 text-sm border border-slate-200 rounded-xl bg-slate-50 text-slate-500 cursor-not-allowed font-medium"
+        />
+      </div>
+    </div>
+  );
 
   return (
     <AnimatePresence>
@@ -80,7 +98,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 <User className="w-5 h-5" />
               </div>
               <div>
-                <h3 className="font-bold text-slate-800 text-base">Student Academic Profile</h3>
+                <h3 className="font-bold text-slate-800 text-base">Student Profile</h3>
                 <p className="text-xs text-slate-500">{user?.email}</p>
               </div>
             </div>
@@ -93,6 +111,14 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
           </div>
 
           <form onSubmit={handleSubmit} className="p-6 space-y-4">
+            <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-500 leading-relaxed">
+              <ShieldCheck className="w-4 h-4 text-slate-400 flex-shrink-0 mt-0.5" />
+              <span>
+                Academic details (stream, semester, section, roll) are managed by your administrator and cannot be
+                self-edited.
+              </span>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
                 Full Name
@@ -109,76 +135,49 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
-                Roll Number / Student ID
-              </label>
-              <div className="relative">
-                <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
+            {readOnlyField(
+              <Hash className="w-4 h-4 text-slate-400 absolute left-3 top-3" />,
+              'Roll Number',
+              profile?.roll
+            )}
+
+            <div className="grid grid-cols-3 gap-3">
+              {readOnlyField(
+                <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />,
+                'Stream',
+                profile?.stream
+              )}
+              {readOnlyField(
+                <Layers className="w-4 h-4 text-slate-400 absolute left-3 top-3" />,
+                'Semester',
+                profile?.sem
+              )}
+              {readOnlyField(
+                <BookOpen className="w-4 h-4 text-slate-400 absolute left-3 top-3" />,
+                'Section',
+                profile?.section
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100">
+              <p className="text-xs font-semibold text-slate-600 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                <Lock className="w-3.5 h-3.5" /> Change Password
+              </p>
+              <div className="space-y-2">
                 <input
-                  type="text"
-                  value={formData.roll}
-                  onChange={(e) => setFormData({ ...formData, roll: e.target.value })}
-                  placeholder="e.g. CS21045"
-                  className="w-full pl-9 pr-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                  type="password"
+                  value={passwords.currentPassword}
+                  onChange={(e) => setPasswords({ ...passwords, currentPassword: e.target.value })}
+                  placeholder="Current password (required to set new)"
+                  className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                 />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
-                  Stream / Branch
-                </label>
-                <div className="relative">
-                  <GraduationCap className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <select
-                    value={formData.stream}
-                    onChange={(e) => setFormData({ ...formData, stream: e.target.value })}
-                    className="w-full pl-9 pr-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white uppercase font-medium"
-                  >
-                    <option value="cse">CSE</option>
-                    <option value="it">IT</option>
-                    <option value="ece">ECE</option>
-                    <option value="ee">EE</option>
-                    <option value="me">ME</option>
-                  </select>
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
-                  Semester
-                </label>
-                <div className="relative">
-                  <Layers className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
-                  <select
-                    value={formData.sem}
-                    onChange={(e) => setFormData({ ...formData, sem: e.target.value })}
-                    className="w-full pl-9 pr-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none bg-white font-medium"
-                  >
-                    {['1', '2', '3', '4', '5', '6', '7', '8'].map((s) => (
-                      <option key={s} value={s}>
-                        Sem {s}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-xs font-semibold text-slate-600 uppercase tracking-wider mb-1.5">
-                Academic Batch
-              </label>
-              <div className="relative">
-                <BookOpen className="w-4 h-4 text-slate-400 absolute left-3 top-3" />
                 <input
-                  type="text"
-                  value={formData.batch}
-                  onChange={(e) => setFormData({ ...formData, batch: e.target.value })}
-                  placeholder="e.g. 2024-2028"
-                  className="w-full pl-9 pr-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                  type="password"
+                  value={passwords.newPassword}
+                  onChange={(e) => setPasswords({ ...passwords, newPassword: e.target.value })}
+                  placeholder="New password (leave blank to keep)"
+                  minLength={passwords.newPassword ? 6 : 0}
+                  className="w-full px-3.5 py-2 text-sm border border-slate-200 rounded-xl focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
                 />
               </div>
             </div>
@@ -197,7 +196,7 @@ export default function ProfileModal({ isOpen, onClose }: ProfileModalProps) {
                 className="flex items-center gap-2 px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-medium shadow-md shadow-indigo-600/20 transition-all disabled:opacity-50"
               >
                 <Save className="w-4 h-4" />
-                <span>{saving ? 'Saving...' : 'Save Profile'}</span>
+                <span>{saving ? 'Saving...' : 'Save'}</span>
               </button>
             </div>
           </form>

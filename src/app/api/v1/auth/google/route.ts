@@ -53,35 +53,28 @@ export async function POST(req: NextRequest) {
 
     const cleanEmail = email.toLowerCase();
 
-    // Check if student exists
+    // Students can ONLY log in if their email was pre-enrolled by an admin.
+    // No self-registration / auto-provisioning.
     let studentRes = await query(
       'SELECT * FROM student_users WHERE email = $1 OR google_id = $2;',
       [cleanEmail, googleId]
     );
 
-    let student;
     if (studentRes.rowCount === 0) {
-      // Create new student user
-      const defaultStream = process.env.DEFAULT_STUDENT_STREAM || 'cse';
-      const defaultSem = process.env.DEFAULT_STUDENT_SEM || '1';
-      const defaultBatch = process.env.DEFAULT_STUDENT_BATCH || '2024-2028';
-
-      const insertRes = await query(
-        `INSERT INTO student_users (email, google_id, display_name, name, avatar_url, stream, sem, batch)
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-         RETURNING *;`,
-        [cleanEmail, googleId, name, name, picture, defaultStream, defaultSem, defaultBatch]
+      return NextResponse.json(
+        { detail: 'Your email is not enrolled. Please contact your administrator to get access.' },
+        { status: 403 }
       );
-      student = insertRes.rows[0];
-    } else {
-      student = studentRes.rows[0];
-      // Update google_id and avatar if missing
-      if (!student.google_id || !student.avatar_url) {
-        await query(
-          'UPDATE student_users SET google_id = COALESCE(google_id, $1), avatar_url = COALESCE(avatar_url, $2) WHERE id = $3;',
-          [googleId, picture, student.id]
-        );
-      }
+    }
+
+    const student = studentRes.rows[0];
+
+    // Link google_id and avatar if missing (no profile/academic changes)
+    if (!student.google_id || !student.avatar_url) {
+      await query(
+        'UPDATE student_users SET google_id = COALESCE(google_id, $1), avatar_url = COALESCE(avatar_url, $2) WHERE id = $3;',
+        [googleId, picture, student.id]
+      );
     }
 
     const token = await createAccessToken({
@@ -100,6 +93,7 @@ export async function POST(req: NextRequest) {
       avatar_url: student.avatar_url,
       stream: student.stream,
       sem: student.sem,
+      section: student.section,
       roll: student.roll || student.roll_number || '',
       role: 'student',
       access_token: token,

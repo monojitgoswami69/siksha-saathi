@@ -24,10 +24,14 @@ export default function AddDocumentPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [stream, setStream] = useState('cse');
   const [semester, setSemester] = useState('1');
+  const [section, setSection] = useState('cse1');
   const [subject, setSubject] = useState('Data Structures');
   const [module, setModule] = useState('Module 1');
+  const [general, setGeneral] = useState(false);
 
   const [curriculum, setCurriculum] = useState<Record<string, Record<string, string[]>>>({});
+  const [filterStreams, setFilterStreams] = useState<string[]>([]);
+  const [filterSections, setFilterSections] = useState<string[]>([]);
   const [uploading, setUploading] = useState(false);
   const [uploadProgress, setUploadProgress] = useState<string>('');
 
@@ -35,17 +39,20 @@ export default function AddDocumentPage() {
     api.filters
       .getFilters()
       .then((data) => {
-        if (data && data.curriculum) {
-          setCurriculum(data.curriculum);
-          const availableStreams = Object.keys(data.curriculum);
-          if (availableStreams.length > 0) {
-            setStream(availableStreams[0]);
+        if (data) {
+          if (data.curriculum) {
+            setCurriculum(data.curriculum);
+            const availableStreams = Object.keys(data.curriculum);
+            if (availableStreams.length > 0 && !filterStreams.length) setStream(availableStreams[0]);
           }
+          if (Array.isArray(data.streams) && data.streams.length) setFilterStreams(data.streams);
+          if (Array.isArray(data.sections)) setFilterSections(data.sections);
         }
       })
       .catch(() => {});
   }, []);
 
+  const streamsForSelection = filterStreams.length ? filterStreams : Object.keys(curriculum);
   const subjectsForSelection = curriculum[stream]?.[semester] || [
     'Data Structures',
     'Operating Systems',
@@ -80,10 +87,11 @@ export default function AddDocumentPage() {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('title', file.name);
-        formData.append('stream', stream);
-        formData.append('semester', semester);
-        formData.append('subject', subject);
-        formData.append('module', module);
+        formData.append('stream', general ? 'General' : stream);
+        formData.append('semester', general ? 'General' : semester);
+        formData.append('section', general ? 'General' : section);
+        formData.append('subject', general ? 'General' : subject);
+        formData.append('module', general ? 'General' : module);
 
         await api.documents.ingest(formData);
       } catch (err: any) {
@@ -106,8 +114,24 @@ export default function AddDocumentPage() {
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 space-y-6">
+        {/* General availability toggle */}
+        <label className="flex items-center gap-3 cursor-pointer select-none">
+          <input
+            type="checkbox"
+            checked={general}
+            onChange={(e) => setGeneral(e.target.checked)}
+            className="w-4 h-4 accent-indigo-500"
+          />
+          <span className="text-xs font-bold text-slate-200">
+            Make available to everyone (General)
+          </span>
+          <span className="text-[10px] text-slate-500">
+            When on, ignores stream/semester/section/subject and shows this to all students.
+          </span>
+        </label>
+
         {/* Metadata Selectors */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+        <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 ${general ? 'opacity-40 pointer-events-none' : ''}`}>
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Stream</label>
             <select
@@ -115,10 +139,11 @@ export default function AddDocumentPage() {
               onChange={(e) => setStream(e.target.value)}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
             >
-              <option value="cse">CSE</option>
-              <option value="it">IT</option>
-              <option value="ece">ECE</option>
-              <option value="ee">EE</option>
+              {streamsForSelection.map((s) => (
+                <option key={s} value={s}>
+                  {s}
+                </option>
+              ))}
             </select>
           </div>
 
@@ -135,6 +160,23 @@ export default function AddDocumentPage() {
                 </option>
               ))}
             </select>
+          </div>
+
+          <div>
+            <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Section</label>
+            <input
+              type="text"
+              value={section}
+              onChange={(e) => setSection(e.target.value)}
+              list="section-options"
+              placeholder="e.g. cse1 / cse2"
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
+            />
+            <datalist id="section-options">
+              {filterSections.map((s) => (
+                <option key={s} value={s} />
+              ))}
+            </datalist>
           </div>
 
           <div>
@@ -173,7 +215,7 @@ export default function AddDocumentPage() {
           <input
             type="file"
             multiple
-            accept=".pdf,.docx,.doc,.pptx,.png,.jpg,.jpeg,.txt"
+            accept=".pdf,.docx,.doc,.pptx,.md,.markdown,.txt,.png,.jpg,.jpeg"
             onChange={handleFileChange}
             className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
           />

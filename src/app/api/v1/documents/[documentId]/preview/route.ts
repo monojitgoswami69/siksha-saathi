@@ -16,7 +16,7 @@ export async function GET(
     const { documentId } = await params;
 
     const docRes = await query(
-      'SELECT id, title, source, storage_provider, file_key, preview_url, dropbox_path, dropbox_shared_link FROM documents WHERE id = $1;',
+      'SELECT id, title, file_name, storage_provider, file_key, preview_url, dropbox_path, dropbox_shared_link FROM documents WHERE id = $1;',
       [documentId]
     );
 
@@ -44,7 +44,7 @@ export async function GET(
       document_id: documentId,
       preview_url: previewUrl || '',
       title: doc.title,
-      source: doc.source,
+      file_name: doc.file_name,
       provider,
     });
   } catch (err: any) {

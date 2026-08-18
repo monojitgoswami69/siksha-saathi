@@ -19,7 +19,7 @@ export async function GET(
     }
 
     const studentRes = await query(
-      'SELECT id, email, display_name, name, roll, stream, sem, batch, avatar_url FROM student_users WHERE id = $1;',
+      'SELECT id, email, display_name, name, roll, stream, sem, section, avatar_url FROM student_users WHERE id = $1;',
       [uid]
     );
 
@@ -47,7 +47,7 @@ export async function GET(
         roll: student.roll,
         stream: student.stream,
         sem: student.sem,
-        batch: student.batch,
+        section: student.section,
       },
       queries_by_subject: qRes.rows,
       total_queries: qRes.rows.reduce((a, b) => a + b.count, 0),

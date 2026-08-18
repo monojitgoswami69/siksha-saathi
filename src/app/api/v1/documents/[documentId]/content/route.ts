@@ -14,13 +14,13 @@ export async function GET(
 
     const { documentId } = await params;
 
-    const docRes = await query('SELECT title, source FROM documents WHERE id = $1;', [documentId]);
+    const docRes = await query('SELECT title, file_name FROM documents WHERE id = $1;', [documentId]);
     if (docRes.rowCount === 0) {
       return NextResponse.json({ detail: 'Document not found' }, { status: 404 });
     }
 
     const chunksRes = await query(
-      `SELECT chunk_index, raw_content, page_start, page_end
+      `SELECT id, chunk_index, raw_content, page_start, page_end, paragraph_id, chunk_type, char_start, char_end, file_name
        FROM document_chunks
        WHERE document_id = $1
        ORDER BY chunk_index ASC;`,
@@ -32,7 +32,7 @@ export async function GET(
     return NextResponse.json({
       document_id: documentId,
       title: docRes.rows[0].title,
-      source: docRes.rows[0].source,
+      file_name: docRes.rows[0].file_name,
       total_chunks: chunksRes.rowCount,
       content: fullContent,
       chunks: chunksRes.rows,

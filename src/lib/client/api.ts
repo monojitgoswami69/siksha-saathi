@@ -72,8 +72,6 @@ export const api = {
   auth: {
     studentLogin: (email: string, password: string) =>
       request('/student/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
-    studentRegister: (data: any) =>
-      request('/student/register', { method: 'POST', body: JSON.stringify(data) }),
     adminLogin: (email: string, password: string) =>
       request('/admin/login', { method: 'POST', body: JSON.stringify({ email, password }) }, 'admin'),
     googleAuth: (payload: string | { idToken?: string; accessToken?: string }) =>
@@ -162,6 +160,11 @@ export const api = {
     },
     getContent: (docId: string) =>
       request(`/documents/${docId}/content`, { method: 'GET' }, 'admin'),
+    getChunk: (docId: string, chunkId: string): Promise<{
+      chunk: any;
+      document: any;
+      preview_url: string;
+    }> => request(`/documents/${docId}/chunks/${chunkId}`, { method: 'GET' }),
   },
 
   filters: {
@@ -178,12 +181,13 @@ export const api = {
 
   admin: {
     dashboard: () => request('/admin/dashboard', { method: 'GET' }, 'admin'),
-    enrollStudents: (data: { csv_data: string; stream?: string; semester?: string }) =>
+    enrollStudents: (data: { csv_data: string; initial_password: string }) =>
       request('/admin/enroll_students', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
-    getStudents: (params: { stream?: string; semester?: string } = {}) => {
+    getStudents: (params: { stream?: string; semester?: string; section?: string } = {}) => {
       const q = new URLSearchParams();
       if (params.stream) q.append('stream', params.stream);
       if (params.semester) q.append('semester', params.semester);
+      if (params.section) q.append('section', params.section);
       return request(`/students?${q.toString()}`, { method: 'GET' }, 'admin');
     },
   },

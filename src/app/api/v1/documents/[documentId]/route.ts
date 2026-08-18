@@ -21,7 +21,7 @@ export async function DELETE(
     const { documentId } = await params;
 
     const docRes = await query(
-      'SELECT id, title, source, storage_provider, file_key, dropbox_path FROM documents WHERE id = $1;',
+      'SELECT id, title, file_name, storage_provider, file_key, dropbox_path FROM documents WHERE id = $1;',
       [documentId]
     );
 
@@ -51,7 +51,7 @@ export async function DELETE(
       details: {
         document_id: documentId,
         title: doc.title,
-        source: doc.source,
+        file_name: doc.file_name,
         provider,
       },
     });

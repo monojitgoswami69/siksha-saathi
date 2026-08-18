@@ -102,6 +102,7 @@ async function validate() {
       'student_users',
       'documents',
       'document_chunks',
+      'document_images',
       'chat_sessions',
       'chat_messages',
       'quiz_results',

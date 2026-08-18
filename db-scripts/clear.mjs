@@ -71,6 +71,7 @@ async function clearDb() {
     'quiz_results',
     'chat_messages',
     'chat_sessions',
+    'document_images',
     'document_chunks',
     'documents',
     'student_users',

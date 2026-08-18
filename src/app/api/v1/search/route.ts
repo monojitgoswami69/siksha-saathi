@@ -18,6 +18,9 @@ export async function POST(req: NextRequest) {
       subject: reqSubject,
       stream: reqStream,
       semester: reqSem,
+      section: reqSection,
+      file_name: reqFileName,
+      document_id: reqDocId,
       top_k,
     } = body;
 
@@ -27,29 +30,29 @@ export async function POST(req: NextRequest) {
 
     const topK = top_k || parseInt(process.env.RETRIEVAL_TOP_K || '5', 10);
 
-    // Parallel: embedding + student profile lookup
     const [queryEmbedding, studentRes] = await Promise.all([
       getEmbedding(queryText),
-      query('SELECT stream, sem FROM student_users WHERE id = $1;', [user.uid]).catch(() => ({
-        rowCount: 0,
-        rows: [],
-      })),
+      query('SELECT stream, sem, section FROM student_users WHERE id = $1;', [user.uid]).catch(
+        () => ({ rowCount: 0, rows: [] })
+      ),
     ]);
 
     let studentStream = reqStream;
     let studentSem = reqSem;
+    let studentSection = reqSection;
     if (studentRes.rowCount && studentRes.rowCount > 0) {
       const profile = studentRes.rows[0] as any;
       studentStream = studentStream || profile.stream;
       studentSem = studentSem || profile.sem;
+      studentSection = studentSection || profile.section;
     }
 
     const vectorStr = formatVector(queryEmbedding);
     const cleanSearchText = queryText.replace(/[^\w\s]/gi, ' ').trim() || queryText;
 
     let whereFilter = 'WHERE c.embedding IS NOT NULL';
-    const params: any[] = [vectorStr, cleanSearchText];
-    let pIdx = 3;
+    const params: any[] = [];
+    let pIdx = 1;
 
     if (studentStream && studentStream !== 'All') {
       whereFilter += ` AND (c.stream = $${pIdx} OR c.stream = 'General' OR c.stream IS NULL)`;
@@ -61,34 +64,53 @@ export async function POST(req: NextRequest) {
       params.push(studentSem);
       pIdx++;
     }
+    if (studentSection && studentSection !== 'All') {
+      whereFilter += ` AND (c.section = $${pIdx} OR c.section = 'General' OR c.section IS NULL)`;
+      params.push(studentSection);
+      pIdx++;
+    }
     if (reqSubject && reqSubject !== 'All Subjects') {
       whereFilter += ` AND (LOWER(c.subject) = LOWER($${pIdx}) OR c.subject = 'General' OR c.subject IS NULL)`;
       params.push(reqSubject);
       pIdx++;
     }
+    if (reqFileName) {
+      whereFilter += ` AND c.file_name = $${pIdx}`;
+      params.push(reqFileName);
+      pIdx++;
+    }
+    if (reqDocId) {
+      whereFilter += ` AND c.document_id = $${pIdx}`;
+      params.push(reqDocId);
+      pIdx++;
+    }
+
+    const hybridParams: any[] = [vectorStr, cleanSearchText, ...params];
+    const scopeClauseForHybrid = whereFilter.replace(/\$(\d+)/g, (_, n) => `$${parseInt(n, 10) + 2}`);
 
     const hybridSql = `
       WITH vector_search AS (
-        SELECT 
+        SELECT
           c.id,
           ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1) AS v_rank,
           (1 - (c.embedding <=> $1)) AS v_sim
         FROM document_chunks c
-        ${whereFilter}
+        ${scopeClauseForHybrid}
         LIMIT 25
       ),
       text_search AS (
-        SELECT 
+        SELECT
           c.id,
           ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) DESC) AS t_rank,
           ts_rank_cd(to_tsvector('english', c.raw_content), plainto_tsquery('english', $2)) AS t_score
         FROM document_chunks c
-        ${whereFilter} AND to_tsvector('english', c.raw_content) @@ plainto_tsquery('english', $2)
+        ${scopeClauseForHybrid} AND to_tsvector('english', c.raw_content) @@ plainto_tsquery('english', $2)
         LIMIT 25
       )
-      SELECT 
+      SELECT
         c.id, c.document_id, c.chunk_index, c.total_chunks, c.raw_content AS text,
-        c.page_start, c.page_end, c.source, c.title, c.stream, c.semester, c.subject, c.module,
+        c.page_start, c.page_end, c.paragraph_id, c.chunk_type, c.char_start, c.char_end,
+        c.file_name, c.title, c.stream, c.semester, c.section, c.subject, c.module,
         COALESCE(v.v_sim, 0) AS score,
         COALESCE(t.t_score, 0) AS text_score,
         (COALESCE(1.0 / (60 + v.v_rank), 0.0) + COALESCE(1.0 / (60 + t.t_rank), 0.0)) AS rrf_score
@@ -97,24 +119,27 @@ export async function POST(req: NextRequest) {
       LEFT JOIN text_search t ON c.id = t.id
       WHERE v.id IS NOT NULL OR t.id IS NOT NULL
       ORDER BY rrf_score DESC, score DESC
-      LIMIT $${pIdx};
+      LIMIT $${params.length + 3};
     `;
-    params.push(topK);
+    hybridParams.push(topK);
 
     let searchResults: any[] = [];
     try {
-      const res = await query(hybridSql, params);
+      const res = await query(hybridSql, hybridParams);
       searchResults = res.rows.filter((r) => r.score > SIMILARITY_THRESHOLD || r.text_score > 0.05);
     } catch (e: any) {
       console.warn('Hybrid search fallback:', e.message);
+      const fallbackScope = whereFilter.replace(/\$(\d+)/g, (_, n) => `$${parseInt(n, 10) + 1}`);
+      const fallbackParams: any[] = [vectorStr, ...params, topK];
       const fallbackRes = await query(
         `SELECT id, document_id, chunk_index, total_chunks, raw_content AS text,
-                page_start, page_end, source, title, stream, semester, subject, module,
+                page_start, page_end, paragraph_id, chunk_type, char_start, char_end,
+                file_name, title, stream, semester, section, subject, module,
                 1 - (embedding <=> $1) AS score
-         FROM document_chunks
-         WHERE embedding IS NOT NULL
-         ORDER BY embedding <=> $1 LIMIT $2;`,
-        [vectorStr, topK]
+         FROM document_chunks c
+         ${fallbackScope}
+         ORDER BY embedding <=> $1 LIMIT $${params.length + 2};`,
+        fallbackParams
       );
       searchResults = fallbackRes.rows.filter((r) => r.score > SIMILARITY_THRESHOLD);
     }

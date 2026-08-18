@@ -22,6 +22,12 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
   const [previewDoc, setPreviewDoc] = useState<DocumentInfo | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
   const [previewPage, setPreviewPage] = useState<number | undefined>(undefined);
+  const [highlightedChunk, setHighlightedChunk] = useState<{
+    text: string;
+    paragraph_id?: string;
+    chunk_type?: string;
+    page?: number;
+  } | null>(null);
 
   const isNearBottom = () => {
     const container = scrollRef.current;
@@ -60,10 +66,11 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
       id: docId,
       document_id: docId,
       title: title || 'Course Document',
-      source: title || 'document.pdf',
+      file_name: title || 'document.pdf',
     } as DocumentInfo);
     setPreviewPage(page);
     setPreviewUrl(null);
+    setHighlightedChunk(null);
 
     try {
       const res = await api.documents.getPreviewUrl(docId);
@@ -73,13 +80,54 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
     }
   };
 
-  // Helper to replace raw citation tags with clean text for markdown parsing
-  const cleanCitationMarkdown = (content: string) => {
-    return content.replace(
-      /\[\[Source:\s*"([^"]+)",\s*Page:\s*(\d+),\s*docId:\s*"([^"]+)"\]\]/g,
-      '*(Source: $1, Page $2)*'
-    );
+  // Open a specific chunk by ordinal (from an inline [[#n]] citation).
+  const handleOpenCitation = async (
+    n: number,
+    sources?: Array<any>
+  ): Promise<void> => {
+    const src = sources?.find((s) => s.n === n) || sources?.[n - 1];
+    if (!src) return;
+    const docId = src.document_id;
+    const chunkId = src.chunk_id;
+    setPreviewDoc({
+      id: docId,
+      document_id: docId,
+      title: src.title || src.file_name || 'Course Document',
+      file_name: src.file_name || src.title || 'document.pdf',
+    } as DocumentInfo);
+    setPreviewPage(src.page);
+    setPreviewUrl(null);
+    setHighlightedChunk(null);
+
+    if (docId && chunkId) {
+      try {
+        const res = await api.documents.getChunk(docId, chunkId);
+        setPreviewUrl(res.preview_url || null);
+        setHighlightedChunk({
+          text: res.chunk?.raw_content || '',
+          paragraph_id: res.chunk?.paragraph_id,
+          chunk_type: res.chunk?.chunk_type,
+          page: res.chunk?.page_start || src.page,
+        });
+      } catch {
+        // Fall back to plain preview fetch
+        try {
+          const r2 = await api.documents.getPreviewUrl(docId);
+          setPreviewUrl(r2.preview_url || null);
+        } catch {}
+      }
+    } else if (docId) {
+      try {
+        const r2 = await api.documents.getPreviewUrl(docId);
+        setPreviewUrl(r2.preview_url || null);
+      } catch {}
+    }
   };
+
+  // Convert [[#n]] citation tags into markdown links a custom renderer turns
+  // into clickable chips. cite://<n> hrefs are intercepted (never navigated).
+  const renderCitations = (content: string) =>
+    content.replace(/\[\[#(\d+)\]\]/g, (_, n) => `[#${n}](cite://${n})`);
 
   if (messages.length === 0) {
     const firstName = userName ? userName.split(' ')[0] : 'Student';
@@ -185,8 +233,35 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
                                 prose-hr:my-8 prose-hr:border-slate-300/70"
                               style={{ fontFamily: '"JetBrains Mono", monospace' }}
                             >
-                              <ReactMarkdown remarkPlugins={[remarkGfm]}>
-                                {cleanCitationMarkdown(msg.content)}
+                              <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
+                                components={{
+                                  a: ({ href, children }) => {
+                                    if (href && href.startsWith('cite://')) {
+                                      const n = parseInt(href.replace('cite://', ''), 10);
+                                      return (
+                                        <button
+                                          type="button"
+                                          onClick={(e) => {
+                                            e.preventDefault();
+                                            handleOpenCitation(n, msg.sources);
+                                          }}
+                                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 align-middle cursor-pointer"
+                                          title={`Open source #${n}`}
+                                        >
+                                          <FileText className="w-2.5 h-2.5" />#{n}
+                                        </button>
+                                      );
+                                    }
+                                    return (
+                                      <a href={href} target="_blank" rel="noopener noreferrer">
+                                        {children}
+                                      </a>
+                                    );
+                                  },
+                                }}
+                              >
+                                {renderCitations(msg.content)}
                               </ReactMarkdown>
                               {isStreamingThis && (
                                 <span className="inline-block w-2 h-4 bg-slate-400 ml-1 animate-pulse rounded-sm align-middle" />
@@ -202,7 +277,7 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
                                 </div>
                                 <div className="flex flex-wrap gap-2">
                                   {sources.map((src: any, i: number) => {
-                                    const title = typeof src === 'string' ? src : src.title || src.source || 'Document';
+                                    const title = typeof src === 'string' ? src : src.title || src.file_name || 'Document';
                                     const page = typeof src === 'object' ? src.page : undefined;
                                     const docId = typeof src === 'object' ? src.document_id : undefined;
 
@@ -242,10 +317,12 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
         document={previewDoc}
         previewUrl={previewUrl}
         initialPage={previewPage}
+        highlightedChunk={highlightedChunk}
         onClose={() => {
           setPreviewDoc(null);
           setPreviewUrl(null);
           setPreviewPage(undefined);
+          setHighlightedChunk(null);
         }}
       />
     </>

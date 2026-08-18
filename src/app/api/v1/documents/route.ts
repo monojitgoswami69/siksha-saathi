@@ -12,28 +12,30 @@ export async function GET(req: NextRequest) {
     const { searchParams } = new URL(req.url);
     let stream = searchParams.get('stream');
     let semester = searchParams.get('semester') || searchParams.get('sem');
+    let section = searchParams.get('section');
     const subject = searchParams.get('subject');
 
-    // For students: auto-scope to their enrolled stream/semester from DB profile
+    // Students: auto-scope to their enrolled stream/semester/section
     if (user.scope === 'student' || user.role === 'student') {
-      if (!stream || !semester) {
+      if (!stream || !semester || !section) {
         try {
           const profileRes = await query(
-            'SELECT stream, sem FROM student_users WHERE id = $1;',
+            'SELECT stream, sem, section FROM student_users WHERE id = $1;',
             [user.uid]
           );
           if (profileRes.rowCount && profileRes.rowCount > 0) {
             const profile = profileRes.rows[0] as any;
             stream = stream || profile.stream;
             semester = semester || profile.sem;
+            section = section || profile.section;
           }
         } catch {}
       }
     }
 
     let sql = `
-      SELECT id as document_id, id, title, source, mime_type, file_size_bytes as file_size,
-             dropbox_path, dropbox_shared_link, stream, semester, subject, module,
+      SELECT id as document_id, id, title, file_name, mime_type, file_size_bytes as file_size,
+             dropbox_path, dropbox_shared_link, stream, semester, section, subject, module,
              uploaded_by, uploader_email, total_chunks, created_at
       FROM documents
       WHERE 1=1
@@ -41,7 +43,6 @@ export async function GET(req: NextRequest) {
     const params: any[] = [];
     let pIdx = 1;
 
-    // Students always get filtered by their stream/semester
     if (stream && stream !== 'All') {
       sql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;
       params.push(stream);
@@ -50,6 +51,11 @@ export async function GET(req: NextRequest) {
     if (semester && semester !== 'All') {
       sql += ` AND (semester = $${pIdx} OR semester = 'General' OR semester IS NULL)`;
       params.push(semester);
+      pIdx++;
+    }
+    if (section && section !== 'All') {
+      sql += ` AND (section = $${pIdx} OR section = 'General' OR section IS NULL)`;
+      params.push(section);
       pIdx++;
     }
     if (subject && subject !== 'All Subjects') {
@@ -67,12 +73,13 @@ export async function GET(req: NextRequest) {
         document_id: d.document_id,
         id: d.id,
         title: d.title,
-        source: d.source,
+        file_name: d.file_name,
         mime_type: d.mime_type,
         file_size: parseInt(d.file_size || '0', 10),
         file_size_bytes: parseInt(d.file_size || '0', 10),
         stream: d.stream,
         semester: d.semester,
+        section: d.section,
         subject: d.subject,
         module: d.module,
         total_chunks: d.total_chunks,

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { ChatSession, ChatMessage } from '@/types';
+import { ChatSession, ChatMessage, CitationSource } from '@/types';
 import { api } from '@/lib/client/api';
 import { useStudentAuth } from './StudentAuthContext';
 
@@ -16,7 +16,7 @@ interface ChatContextValue {
   isInitialLoading: boolean;
   handleNewChat: (title?: string) => Promise<string | null>;
   handleSelectChat: (chatId: string) => void;
-  handleSendMessage: (text: string, contextFilter?: { document_id?: string; subject?: string }) => Promise<void>;
+  handleSendMessage: (text: string, contextFilter?: { document_id?: string; subject?: string; file_name?: string }) => Promise<void>;
   handlePinChat: (chatId: string) => Promise<void>;
   handleDeleteChat: (chatId: string) => Promise<void>;
   initializeChats: () => Promise<void>;
@@ -161,7 +161,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const handleSendMessage = async (
     text: string,
-    contextFilter?: { document_id?: string; subject?: string }
+    contextFilter?: { document_id?: string; subject?: string; file_name?: string }
   ) => {
     if (!text.trim() || isStreaming) return;
 
@@ -219,7 +219,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           session_id: targetChatId,
           stream: profile?.stream,
           semester: profile?.sem,
+          section: profile?.section,
           document_id: contextFilter?.document_id,
+          file_name: contextFilter?.file_name,
           subject: contextFilter?.subject,
           history,
         }),
@@ -234,7 +236,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       const decoder = new TextDecoder();
       let accumulated = '';
-      let streamSources: Array<{ title: string; page?: number; subject?: string }> = [];
+      let streamSources: CitationSource[] = [];
 
       while (true) {
         const { value, done } = await reader.read();

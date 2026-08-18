@@ -1,24 +1,30 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser, requireRole } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
-import { extractDocumentContent, chunkExtractedDocument, ExtractionResult } from '@/lib/server/documentProcessor';
+import {
+  extractDocumentContent,
+  chunkExtractedDocument,
+  ExtractionResult,
+} from '@/lib/server/documentProcessor';
 import { getBatchEmbeddings, formatVector } from '@/lib/server/embeddings';
 import { uploadStorageFile } from '@/lib/server/storage';
 import { logAudit } from '@/lib/server/audit';
 import { invalidateFilterCache } from '@/app/api/v1/filters/route';
 
 /**
- * Background async worker to process document extraction, chunking, and embedding
+ * Background worker: extraction -> paragraph-aware chunking -> batch embedding
+ * -> batch insert into document_chunks.
  */
 async function processDocumentInBackground({
   docId,
   fileBuffer,
   rawContent,
   mimeType,
-  source,
+  fileName,
   title,
   stream,
   semester,
+  section,
   subject,
   module,
   user,
@@ -27,22 +33,22 @@ async function processDocumentInBackground({
   fileBuffer: Buffer | null;
   rawContent: string;
   mimeType: string;
-  source: string;
+  fileName: string;
   title: string;
   stream: string;
   semester: string;
+  section: string;
   subject: string;
   module: string;
   user: { uid: string; email: string; role: string };
 }) {
   try {
-    // 1. Text extraction (30% progress)
+    // 1. Text extraction (30%)
     await query('UPDATE documents SET processing_progress = 30 WHERE id = $1;', [docId]);
 
     let extraction: ExtractionResult;
-
     if (fileBuffer && fileBuffer.length > 0) {
-      extraction = await extractDocumentContent(source, fileBuffer, mimeType);
+      extraction = await extractDocumentContent(fileName, fileBuffer, mimeType);
     } else {
       extraction = {
         fullText: rawContent,
@@ -54,15 +60,16 @@ async function processDocumentInBackground({
       throw new Error('No readable text content extracted from document.');
     }
 
-    // 2. Semantic Chunking (60% progress)
+    // 2. Semantic chunking (60%)
     await query('UPDATE documents SET processing_progress = 60 WHERE id = $1;', [docId]);
 
     const chunks = chunkExtractedDocument({
       extraction,
-      source,
+      fileName,
       title,
       stream,
       semester,
+      section,
       subject,
       module,
     });
@@ -71,45 +78,63 @@ async function processDocumentInBackground({
       throw new Error('Failed to generate semantic text chunks.');
     }
 
-    // 3. Batch Vector Embeddings (80% progress)
+    // 3. Batch vector embeddings (80%)
     await query('UPDATE documents SET processing_progress = 80 WHERE id = $1;', [docId]);
 
     const chunkTexts = chunks.map((c) => c.rawContent);
     const embeddings = await getBatchEmbeddings(chunkTexts);
 
-    // 4. Batch insert into document_chunks
-    for (let i = 0; i < chunks.length; i++) {
-      const chunk = chunks[i];
-      const embedding = embeddings[i];
-      const vectorStr = embedding && embedding.length > 0 ? formatVector(embedding) : null;
-
-      await query(
-        `INSERT INTO document_chunks (
-          document_id, chunk_index, total_chunks, raw_content,
-          page_start, page_end, source, title, stream, semester, subject, module, embedding
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13::vector);`,
-        [
+    // 4. Batch insert chunks (groups of 100 to stay under Postgres param limit)
+    const BATCH = 100;
+    for (let i = 0; i < chunks.length; i += BATCH) {
+      const slice = chunks.slice(i, i + BATCH);
+      const sliceEmbeddings = embeddings.slice(i, i + BATCH);
+      const values: string[] = [];
+      const params: any[] = [];
+      let p = 1;
+      for (let j = 0; j < slice.length; j++) {
+        const chunk = slice[j];
+        const emb = sliceEmbeddings[j];
+        const vectorStr = emb && emb.length > 0 ? formatVector(emb) : null;
+        values.push(
+          `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6},$${p + 7},$${p + 8},$${p + 9},$${p + 10},$${p + 11},$${p + 12},$${p + 13},$${p + 14},$${p + 15},$${p + 16},$${p + 17}::vector)`
+        );
+        params.push(
           docId,
           chunk.chunkIndex,
-          chunks.length,
+          chunk.totalChunks,
           chunk.rawContent,
-          chunk.pageStart || null,
-          chunk.pageEnd || null,
-          chunk.source,
-          chunk.title,
+          chunk.pageStart ?? null,
+          chunk.pageEnd ?? null,
+          chunk.paragraphId ?? null,
+          chunk.chunkType ?? 'text',
+          chunk.charStart ?? null,
+          chunk.charEnd ?? null,
+          chunk.fileName,
+          chunk.title ?? null,
           chunk.stream,
           chunk.semester,
+          chunk.section,
           chunk.subject,
           chunk.module,
-          vectorStr,
-        ]
+          vectorStr
+        );
+        p += 18;
+      }
+      await query(
+        `INSERT INTO document_chunks (
+           document_id, chunk_index, total_chunks, raw_content,
+           page_start, page_end, paragraph_id, chunk_type, char_start, char_end,
+           file_name, title, stream, semester, section, subject, module, embedding
+         ) VALUES ${values.join(',')};`,
+        params
       );
     }
 
-    // 5. Complete Indexing (100% progress)
+    // 5. Complete indexing (100%)
     await query(
-      `UPDATE documents 
-       SET status = 'ready', processing_progress = 100, total_chunks = $1, error_message = NULL 
+      `UPDATE documents
+       SET status = 'ready', processing_progress = 100, total_chunks = $1, error_message = NULL
        WHERE id = $2;`,
       [chunks.length, docId]
     );
@@ -122,15 +147,17 @@ async function processDocumentInBackground({
       role: user.role,
       action: 'document.ingest.completed',
       targetType: 'document',
-      details: { docId, title, chunks: chunks.length, stream, semester, subject },
+      details: { docId, title, chunks: chunks.length, stream, semester, section, subject },
     });
 
-    console.log(`✅ [Async Ingest] Document "${title}" (${docId}) indexed successfully with ${chunks.length} chunks.`);
+    console.log(
+      `✅ [Async Ingest] Document "${title}" (${docId}) indexed with ${chunks.length} chunks.`
+    );
   } catch (err: any) {
     console.error(`❌ [Async Ingest] Failed for docId ${docId}:`, err);
     await query(
-      `UPDATE documents 
-       SET status = 'failed', error_message = $1, processing_progress = 0 
+      `UPDATE documents
+       SET status = 'failed', error_message = $1, processing_progress = 0
        WHERE id = $2;`,
       [err.message || 'Background indexing failed', docId]
     ).catch(() => {});
@@ -154,13 +181,17 @@ export async function POST(req: NextRequest) {
     }
 
     if (!requireRole(user, ['admin', 'superuser', 'hod', 'faculty'])) {
-      return NextResponse.json({ detail: 'Permission denied. Faculty/Admin role required.' }, { status: 403 });
+      return NextResponse.json(
+        { detail: 'Permission denied. Faculty/Admin role required.' },
+        { status: 403 }
+      );
     }
 
-    let source = '';
+    let fileName = '';
     let title = '';
     let stream = 'General';
     let semester = 'General';
+    let section = 'General';
     let subject = 'General';
     let module = 'General';
     let mimeType = 'text/plain';
@@ -172,10 +203,11 @@ export async function POST(req: NextRequest) {
     if (contentType.includes('multipart/form-data')) {
       const formData = await req.formData();
       const file = formData.get('file') as File | null;
-      source = (formData.get('source') as string) || file?.name || 'document.txt';
-      title = (formData.get('title') as string) || source;
+      fileName = (formData.get('source') as string) || (formData.get('file_name') as string) || file?.name || 'document.txt';
+      title = (formData.get('title') as string) || fileName;
       stream = (formData.get('stream') as string) || 'General';
       semester = (formData.get('semester') as string) || (formData.get('sem') as string) || 'General';
+      section = (formData.get('section') as string) || 'General';
       subject = (formData.get('subject') as string) || 'General';
       module = (formData.get('module') as string) || 'General';
 
@@ -188,10 +220,11 @@ export async function POST(req: NextRequest) {
       }
     } else {
       const body = await req.json();
-      source = body.source || 'text_input.txt';
-      title = body.title || source;
+      fileName = body.source || body.file_name || 'text_input.txt';
+      title = body.title || fileName;
       stream = body.stream || 'General';
       semester = body.semester || body.sem || 'General';
+      section = body.section || 'General';
       subject = body.subject || 'General';
       module = body.module || 'General';
       mimeType = body.mime_type || 'text/plain';
@@ -207,7 +240,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: 'File or content text is required' }, { status: 400 });
     }
 
-    // 1. Upload original asset to Cloudflare R2 / Dropbox storage
+    // 1. Upload original asset to Cloudflare R2 / Dropbox
     let storageProvider = 'local';
     let fileKey = null;
     let previewUrl = null;
@@ -216,7 +249,7 @@ export async function POST(req: NextRequest) {
     if (fileBuffer) {
       try {
         const stored = await uploadStorageFile({
-          filename: source,
+          filename: fileName,
           buffer: fileBuffer,
           mimeType,
           folder: 'course_materials',
@@ -229,17 +262,17 @@ export async function POST(req: NextRequest) {
       }
     }
 
-    // 2. Insert initial document record with status = 'processing'
+    // 2. Insert initial document record (status = processing)
     const docRes = await query(
       `INSERT INTO documents (
-        title, source, mime_type, file_size_bytes, storage_provider, file_key,
-        preview_url, stream, semester, subject,
+        title, file_name, mime_type, file_size_bytes, storage_provider, file_key,
+        preview_url, stream, semester, section, subject,
         module, uploaded_by, uploader_email, status, processing_progress, total_chunks
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, 'processing', 10, 0)
-      RETURNING id, title, source, status, processing_progress, preview_url;`,
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, 'processing', 10, 0)
+      RETURNING id, title, file_name, status, processing_progress, preview_url;`,
       [
         title,
-        source,
+        fileName,
         mimeType,
         fileSize,
         storageProvider,
@@ -247,6 +280,7 @@ export async function POST(req: NextRequest) {
         previewUrl,
         stream,
         semester,
+        section,
         subject,
         module,
         user.uid,
@@ -256,22 +290,23 @@ export async function POST(req: NextRequest) {
 
     const newDoc = docRes.rows[0];
 
-    // 3. Trigger asynchronous background processing worker
+    // 3. Trigger asynchronous background processing
     processDocumentInBackground({
       docId: newDoc.id,
       fileBuffer,
       rawContent,
       mimeType,
-      source,
+      fileName,
       title,
       stream,
       semester,
+      section,
       subject,
       module,
       user: { uid: user.uid, email: user.email, role: user.role },
     }).catch((e) => console.error('Background ingestion launch error:', e));
 
-    // 4. Return immediate 202 Accepted response in <500ms
+    // 4. Immediate 202 Accepted
     return NextResponse.json(
       {
         document_id: newDoc.id,

@@ -47,7 +47,7 @@ export async function GET(req: NextRequest) {
       action: row.action,
       actor: row.actor || 'System',
       meta: {
-        filename: row.meta?.title || row.meta?.source || '',
+        filename: row.meta?.title || row.meta?.file_name || row.meta?.source || '',
         ...row.meta,
       },
       timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString(),
