@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/client/api';
 import { useToast } from '@/context/ToastContext';
+import { useAdminAuth } from '@/context/AdminAuthContext';
 import {
   FilePlus,
   Upload,
@@ -20,6 +21,8 @@ import { formatBytes } from '@/lib/client/utils';
 export default function AddDocumentPage() {
   const router = useRouter();
   const { showSuccess, showError } = useToast();
+  const { user } = useAdminAuth();
+  const isScopedRole = user?.role && user.role !== 'admin'; // hod/faculty locked to their stream
 
   const [files, setFiles] = useState<File[]>([]);
   const [stream, setStream] = useState('cse');
@@ -41,8 +44,8 @@ export default function AddDocumentPage() {
         if (data) {
           if (data.curriculum) {
             setCurriculum(data.curriculum);
-            const availableStreams = Object.keys(data.curriculum);
-            if (availableStreams.length > 0 && !filterStreams.length) setStream(availableStreams[0]);
+            const ks = Object.keys(data.curriculum);
+            if (ks.length && !filterStreams.length) setStream(ks[0]);
           }
           if (Array.isArray(data.streams) && data.streams.length) setFilterStreams(data.streams);
           if (Array.isArray(data.sections)) setFilterSections(data.sections);
@@ -50,6 +53,13 @@ export default function AddDocumentPage() {
       })
       .catch(() => {});
   }, []);
+
+  // Non-admins (hod/faculty) are hard-locked to their own stream (server-enforced too).
+  useEffect(() => {
+    if (isScopedRole && user?.stream) {
+      setStream(user.stream);
+    }
+  }, [isScopedRole, user?.stream]);
 
   const streamsForSelection = filterStreams.length ? filterStreams : Object.keys(curriculum);
   const subjectsForSelection = curriculum[stream]?.[semester] || [
@@ -141,9 +151,10 @@ export default function AddDocumentPage() {
             <select
               value={stream}
               onChange={(e) => setStream(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
+              disabled={!!isScopedRole}
+              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
             >
-              <option value="General">General (all streams)</option>
+              {!isScopedRole && <option value="General">General (all streams)</option>}
               {streamsForSelection.map((s) => (
                 <option key={s} value={s}>
                   {s}

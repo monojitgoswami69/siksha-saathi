@@ -68,6 +68,7 @@ async function reset() {
   try {
     const tablesToDrop = [
       'audit_logs',
+      'query_citations',
       'query_logs',
       'curriculum',
       'quiz_results',

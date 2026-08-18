@@ -190,6 +190,34 @@ export const api = {
       if (params.section) q.append('section', params.section);
       return request(`/students?${q.toString()}`, { method: 'GET' }, 'admin');
     },
+    listFaculty: () => request('/admin/users', { method: 'GET' }, 'admin'),
+    createFaculty: (data: {
+      email: string;
+      password: string;
+      displayName: string;
+      role: 'admin' | 'hod' | 'faculty';
+      stream?: string;
+      department?: string;
+      organizationName?: string;
+    }) => request('/admin/users', { method: 'POST', body: JSON.stringify(data) }, 'admin'),
+    updateFaculty: (
+      uid: string,
+      data: {
+        displayName?: string;
+        role?: 'admin' | 'hod' | 'faculty';
+        stream?: string;
+        department?: string;
+        organizationName?: string;
+      }
+    ) => request(`/admin/users/${uid}`, { method: 'PATCH', body: JSON.stringify(data) }, 'admin'),
+    resetFacultyPassword: (uid: string, password: string) =>
+      request(
+        `/admin/users/${uid}/password`,
+        { method: 'POST', body: JSON.stringify({ password }) },
+        'admin'
+      ),
+    deleteFaculty: (uid: string) =>
+      request(`/admin/users/${uid}`, { method: 'DELETE' }, 'admin'),
   },
 
   analytics: {
@@ -203,6 +231,8 @@ export const api = {
     },
     subject: (subject: string) =>
       request(`/analytics/subject/${encodeURIComponent(subject)}`, { method: 'GET' }, 'admin'),
+    faculty: () =>
+      request('/analytics/faculty', { method: 'GET' }, 'admin'),
     student: (uid: string) =>
       request(`/analytics/student/${uid}`, { method: 'GET' }, 'admin'),
   },

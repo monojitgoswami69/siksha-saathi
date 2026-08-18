@@ -6,6 +6,7 @@ import { SignJWT, jwtVerify } from 'jose';
 import bcrypt from 'bcryptjs';
 import { OAuth2Client } from 'google-auth-library';
 import { NextRequest } from 'next/server';
+import { query } from './db';
 
 const JWT_SECRET = process.env.JWT_SECRET;
 if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
@@ -154,5 +155,41 @@ export async function getAuthUser(req: NextRequest): Promise<TokenPayload | null
  */
 export function requireRole(user: TokenPayload | null, allowedRoles: string[]): boolean {
   if (!user) return false;
-  return allowedRoles.includes(user.role) || user.role === 'superuser' || user.role === 'admin';
+  return allowedRoles.includes(user.role) || user.role === 'admin';
+}
+
+/**
+ * Fetch a dashboard user's academic profile (stream, department).
+ * Needed because the JWT does not carry stream — HOD/faculty scoping is
+ * derived from their dashboard_users row, not the token.
+ */
+export async function getDashboardProfile(uid: string): Promise<{
+  stream: string | null;
+  department: string | null;
+}> {
+  try {
+    const res = await query(
+      'SELECT stream, department FROM dashboard_users WHERE id = $1;',
+      [uid]
+    );
+    if (res.rowCount && res.rowCount > 0) {
+      return res.rows[0] as any;
+    }
+  } catch {}
+  return { stream: null, department: null };
+}
+
+/**
+ * Resolve the dashboard scope for analytics/listing routes.
+ *  - admin:   no stream filter (sees everything)
+ *  - hod:     scoped to their stream
+ *  - faculty: scoped to their stream (documents they uploaded are filtered further upstream)
+ * Returns { scopeStream, isScoped }.
+ */
+export async function resolveDashboardScope(
+  user: TokenPayload
+): Promise<{ scopeStream: string | null; isScoped: boolean }> {
+  if (user.role === 'admin') return { scopeStream: null, isScoped: false };
+  const profile = await getDashboardProfile(user.uid);
+  return { scopeStream: profile.stream, isScoped: !!profile.stream };
 }

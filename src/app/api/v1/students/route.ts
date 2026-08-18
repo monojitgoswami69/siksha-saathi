@@ -9,14 +9,27 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!requireRole(user, ['admin', 'superuser', 'hod', 'faculty', 'assistant'])) {
+    // Student directory is admin + HOD only. Faculty do not get student PII.
+    if (!requireRole(user, ['admin', 'hod'])) {
       return NextResponse.json({ detail: 'Access denied' }, { status: 403 });
     }
 
     const { searchParams } = new URL(req.url);
-    const stream = searchParams.get('stream');
+    let stream = searchParams.get('stream');
     const semester = searchParams.get('semester') || searchParams.get('sem');
     const section = searchParams.get('section');
+
+    // HOD is hard-scoped to their own stream (no cross-stream leakage).
+    if (user.role !== 'admin') {
+      try {
+        const profileRes = await query(
+          'SELECT stream FROM dashboard_users WHERE id = $1;',
+          [user.uid]
+        );
+        const hodStream = profileRes.rows[0]?.stream;
+        if (hodStream) stream = hodStream;
+      } catch {}
+    }
 
     let sql = 'SELECT id as uid, email, display_name, name, roll, stream, sem, section, created_at FROM student_users WHERE 1=1';
     const params: any[] = [];

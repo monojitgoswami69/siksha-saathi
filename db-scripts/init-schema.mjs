@@ -306,6 +306,20 @@ async function initSchema() {
         created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
       );
 
+      CREATE TABLE IF NOT EXISTS query_citations (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        query_log_id UUID REFERENCES query_logs(id) ON DELETE CASCADE,
+        chunk_id UUID REFERENCES document_chunks(id) ON DELETE SET NULL,
+        document_id UUID,
+        subject VARCHAR(200),
+        stream VARCHAR(100),
+        semester VARCHAR(20),
+        section VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      ALTER TABLE query_citations ADD COLUMN IF NOT EXISTS document_id UUID;
+      ALTER TABLE query_citations ADD COLUMN IF NOT EXISTS section VARCHAR(50);
+
       CREATE TABLE IF NOT EXISTS audit_logs (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         user_id UUID,
@@ -331,6 +345,10 @@ async function initSchema() {
       CREATE INDEX IF NOT EXISTS idx_quiz_results_user ON quiz_results (user_id, submitted_at DESC);
       DROP INDEX IF EXISTS idx_query_logs_analytics;
       CREATE INDEX IF NOT EXISTS idx_query_logs_analytics ON query_logs (stream, semester, section, subject, created_at);
+      CREATE INDEX IF NOT EXISTS idx_query_citations_subject ON query_citations (subject, created_at);
+      CREATE INDEX IF NOT EXISTS idx_query_citations_doc ON query_citations (document_id);
+      CREATE INDEX IF NOT EXISTS idx_query_citations_scope ON query_citations (stream, semester, section, subject);
+      CREATE INDEX IF NOT EXISTS idx_query_citations_query ON query_citations (query_log_id);
       CREATE INDEX IF NOT EXISTS idx_audit_logs_time ON audit_logs (created_at DESC);
     `);
 

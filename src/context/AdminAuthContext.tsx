@@ -15,7 +15,6 @@ interface AdminAuthContextValue {
   isLoading: boolean;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => Promise<void>;
-  isSuperuser: boolean;
   isAdmin: boolean;
   isFaculty: boolean;
 }
@@ -83,9 +82,8 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const isSuperuser = user?.role === 'superuser' || user?.role === 'super_admin';
-  const isAdmin = isSuperuser || user?.role === 'admin';
-  const isFaculty = isAdmin || user?.role === 'faculty' || user?.role === 'hod' || user?.role === 'assistant';
+  const isAdmin = user?.role === 'admin';
+  const isFaculty = isAdmin || user?.role === 'faculty' || user?.role === 'hod';
 
   return (
     <AdminAuthContext.Provider
@@ -95,7 +93,6 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
         isLoading,
         login,
         logout,
-        isSuperuser,
         isAdmin,
         isFaculty,
       }}

@@ -17,6 +17,8 @@ import {
   Users,
   Library,
   GraduationCap,
+  UserCog,
+  UserCheck,
 } from 'lucide-react';
 
 const navItems = [
@@ -25,63 +27,77 @@ const navItems = [
     label: 'Dashboard',
     path: '/admin/dashboard',
     icon: LayoutDashboard,
-    roles: ['superuser', 'admin', 'assistant', 'hod', 'faculty'],
+    roles: ['admin', 'hod', 'faculty'],
   },
   {
     id: 'query-analytics',
     label: 'Query Analytics',
     path: '/admin/query-analytics',
     icon: BarChart3,
-    roles: ['superuser', 'assistant', 'faculty', 'admin', 'hod'],
+    roles: ['admin', 'hod', 'faculty'],
   },
   {
     id: 'stream-analytics',
     label: 'Stream Analytics',
     path: '/admin/stream-analytics',
     icon: BarChart3,
-    roles: ['superuser', 'hod', 'admin'],
+    roles: ['admin', 'hod'],
+  },
+  {
+    id: 'faculty-performance',
+    label: 'Faculty Performance',
+    path: '/admin/faculty-performance',
+    icon: UserCheck,
+    roles: ['admin', 'hod'],
   },
   {
     id: 'subject-analysis',
     label: 'Subject Analysis',
     path: '/admin/subject-analysis',
     icon: BookOpen,
-    roles: ['superuser', 'assistant', 'faculty', 'admin', 'hod'],
+    roles: ['admin', 'hod', 'faculty'],
   },
   {
     id: 'knowledge-base',
     label: 'Knowledge Base',
     path: '/admin/knowledge-base',
     icon: BookOpen,
-    roles: ['superuser', 'admin', 'assistant', 'hod', 'faculty'],
+    roles: ['admin', 'hod', 'faculty'],
   },
   {
     id: 'add-document',
     label: 'Add Document (OCR)',
     path: '/admin/add-document',
     icon: FilePlus,
-    roles: ['superuser', 'admin', 'hod', 'faculty'],
+    roles: ['admin', 'hod', 'faculty'],
   },
   {
     id: 'add-text',
     label: 'Add Text',
     path: '/admin/add-text',
     icon: Type,
-    roles: ['superuser', 'admin', 'hod', 'faculty'],
+    roles: ['admin', 'hod', 'faculty'],
   },
   {
     id: 'student-records',
     label: 'Student Records',
     path: '/admin/students',
     icon: Users,
-    roles: ['admin', 'superuser', 'hod'],
+    roles: ['admin', 'hod'],
+  },
+  {
+    id: 'manage-faculty',
+    label: 'Manage Faculty',
+    path: '/admin/faculty',
+    icon: UserCog,
+    roles: ['admin'],
   },
   {
     id: 'manage-curriculum',
     label: 'Manage Curriculum',
     path: '/admin/manage-curriculum',
     icon: Library,
-    roles: ['admin', 'superuser'],
+    roles: ['admin'],
   },
 ];
 
@@ -98,15 +114,14 @@ export function Sidebar({
 
   const userRole = user?.role || 'faculty';
   const filteredNavItems = navItems.filter(
-    (item) =>
-      item.roles.includes(userRole) || userRole === 'admin' || userRole === 'superuser'
+    (item) => item.roles.includes(userRole) || userRole === 'admin'
   );
 
   const displayName =
     user?.displayName || user?.email?.split('@')[0] || 'Faculty User';
   const avatarSeed = user?.email || user?.uid || 'admin';
   const displayRole = (userRole || 'Faculty').toUpperCase();
-  const isSuperuser = userRole === 'superuser' || userRole === 'admin';
+  const isAdminRole = userRole === 'admin';
 
   return (
     <aside
@@ -177,7 +192,7 @@ export function Sidebar({
               </p>
               <p
                 className={`text-xs truncate ${
-                  isSuperuser ? 'text-indigo-600 font-semibold' : 'text-neutral-500'
+                  isAdminRole ? 'text-indigo-600 font-semibold' : 'text-neutral-500'
                 }`}
                 title={displayRole}
               >

@@ -178,7 +178,9 @@ export async function POST(req: NextRequest) {
       page: chunk.page_start || undefined,
       paragraph_id: chunk.paragraph_id || undefined,
       subject: chunk.subject || 'General',
-      section: chunk.section || undefined,
+      stream: chunk.stream || 'General',
+      semester: chunk.semester || 'General',
+      section: chunk.section || 'General',
       chunk_type: chunk.chunk_type || 'text',
       similarity: parseFloat((chunk.similarity || 0).toFixed(3)),
     }));
@@ -214,7 +216,8 @@ export async function POST(req: NextRequest) {
     }
 
     const topChunk = searchResults[0];
-    logStudentQuery({
+    // Log the query (one row) and capture its id so we can link every cited chunk below.
+    const queryLogId = await logStudentQuery({
       userId: user.uid,
       queryText: message,
       subject: topChunk?.subject || reqSubject || 'General',
@@ -222,7 +225,7 @@ export async function POST(req: NextRequest) {
       semester: topChunk?.semester || studentSem || 'General',
       section: topChunk?.section || studentSection || 'General',
       topChunkId: topChunk?.id,
-    }).catch(() => {});
+    }).catch(() => null);
 
     // Stream Socratic chat response
     const stream = await streamSocraticChat({
@@ -235,6 +238,9 @@ export async function POST(req: NextRequest) {
     const encoder = new TextEncoder();
     const decoder = new TextDecoder();
     let accumulatedResponse = '';
+    // Capture the sources map for post-stream citation counting (ordinal n -> source).
+    const sourcesByN = new Map<number, any>();
+    sources.forEach((s: any) => sourcesByN.set(s.n, s));
 
     const customStream = new ReadableStream({
       async start(controller) {
@@ -273,6 +279,64 @@ export async function POST(req: NextRequest) {
               `INSERT INTO chat_messages (session_id, role, content, sources) VALUES ($1, 'assistant', $2, $3);`,
               [session_id, accumulatedResponse.trim(), JSON.stringify(sources)]
             ).catch((e) => console.error('Failed to save assistant chat message:', e.message));
+          }
+
+          // ---- Increment counters for EVERY cited material ----
+          // The LLM cites by ordinal [[#n]]; we deterministically map ordinals
+          // back to real chunk metadata (chunk_id, document_id, subject, scope)
+          // from the sources payload — never trusting the LLM with raw UUIDs.
+          if (queryLogId) {
+            try {
+              const citedOrdinals = new Set<number>();
+              const re = /\[\[#(\d+)\]\]/g;
+              let m: RegExpExecArray | null;
+              while ((m = re.exec(accumulatedResponse)) !== null) {
+                citedOrdinals.add(parseInt(m[1], 10));
+              }
+
+              const citedSources: any[] = [];
+              for (const n of citedOrdinals) {
+                const s = sourcesByN.get(n);
+                if (s && s.chunk_id) {
+                  citedSources.push(s);
+                }
+              }
+
+              // Fallback: if the LLM emitted no explicit tags, count the top
+              // retrieved chunk so the query is still attributed to a material.
+              if (citedSources.length === 0 && topChunk) {
+                citedSources.push(sources[0]);
+              }
+
+              if (citedSources.length > 0) {
+                const values: string[] = [];
+                const params: any[] = [];
+                let p = 1;
+                for (const s of citedSources) {
+                  values.push(
+                    `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6})`
+                  );
+                  params.push(
+                    queryLogId,
+                    s.chunk_id,
+                    s.document_id,
+                    s.subject || 'General',
+                    s.stream || 'General',
+                    s.semester || 'General',
+                    s.section || 'General'
+                  );
+                  p += 7;
+                }
+                await query(
+                  `INSERT INTO query_citations
+                     (query_log_id, chunk_id, document_id, subject, stream, semester, section)
+                   VALUES ${values.join(',')};`,
+                  params
+                );
+              }
+            } catch (e: any) {
+              console.error('Citation counter error:', e.message);
+            }
           }
 
           controller.close();

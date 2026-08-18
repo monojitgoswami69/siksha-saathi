@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
+import { resolveScope } from '@/lib/server/analyticsScope';
 
 export async function GET(req: NextRequest) {
   try {
@@ -33,6 +34,17 @@ export async function GET(req: NextRequest) {
       }
     }
 
+    // Dashboard role scoping: admin=all, hod=their stream, faculty=own uploads
+    let facultyScoped = false;
+    if (user.scope === 'dashboard' && user.role !== 'admin' && user.role !== 'student') {
+      const scope = await resolveScope(user);
+      if (scope.mode === 'stream' && scope.stream && !stream) {
+        stream = scope.stream;
+      } else if (scope.mode === 'faculty') {
+        facultyScoped = true;
+      }
+    }
+
     let sql = `
       SELECT id as document_id, id, title, file_name, mime_type, file_size_bytes as file_size,
              dropbox_path, dropbox_shared_link, stream, semester, section, subject, module,
@@ -42,6 +54,12 @@ export async function GET(req: NextRequest) {
     `;
     const params: any[] = [];
     let pIdx = 1;
+
+    if (facultyScoped) {
+      sql += ` AND uploaded_by = $${pIdx}`;
+      params.push(user.uid);
+      pIdx++;
+    }
 
     if (stream && stream !== 'All') {
       sql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;

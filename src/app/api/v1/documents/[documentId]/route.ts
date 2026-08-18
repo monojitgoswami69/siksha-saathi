@@ -14,7 +14,7 @@ export async function DELETE(
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!requireRole(user, ['admin', 'superuser', 'hod', 'faculty'])) {
+    if (!requireRole(user, ['admin', 'hod', 'faculty'])) {
       return NextResponse.json({ detail: 'Permission denied' }, { status: 403 });
     }
 

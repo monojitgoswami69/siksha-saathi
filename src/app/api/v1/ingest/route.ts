@@ -180,7 +180,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!requireRole(user, ['admin', 'superuser', 'hod', 'faculty'])) {
+    if (!requireRole(user, ['admin', 'hod', 'faculty'])) {
       return NextResponse.json(
         { detail: 'Permission denied. Faculty/Admin role required.' },
         { status: 403 }
@@ -238,6 +238,28 @@ export async function POST(req: NextRequest) {
 
     if (!fileBuffer && !rawContent.trim()) {
       return NextResponse.json({ detail: 'File or content text is required' }, { status: 400 });
+    }
+
+    // Non-admin (hod/faculty) uploads are hard-scoped to their own stream to
+    // prevent cross-stream data leakage. 'General' stream is admin-only.
+    if (user.scope === 'dashboard' && user.role !== 'admin') {
+      try {
+        const profileRes = await query(
+          'SELECT stream FROM dashboard_users WHERE id = $1;',
+          [user.uid]
+        );
+        const ownStream = profileRes.rows[0]?.stream;
+        if (ownStream) {
+          stream = ownStream;
+        } else {
+          return NextResponse.json(
+            { detail: 'Your account is not associated with a stream. Contact the administrator.' },
+            { status: 403 }
+          );
+        }
+      } catch {
+        return NextResponse.json({ detail: 'Could not verify your stream scope.' }, { status: 500 });
+      }
     }
 
     // 1. Upload original asset to Cloudflare R2 / Dropbox

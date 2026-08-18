@@ -248,6 +248,34 @@ export const queryLogs = pgTable(
 );
 
 /**
+ * 9b. Query Citations — one row per chunk the LLM actually cited in a query.
+ * Powers per-material / per-subject heatmap counters (a query sourcing N
+ * materials increments all N, not just the top chunk).
+ */
+export const queryCitations = pgTable(
+  'query_citations',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    queryLogId: uuid('query_log_id')
+      .references(() => queryLogs.id, { onDelete: 'cascade' })
+      .notNull(),
+    chunkId: uuid('chunk_id').references(() => documentChunks.id, { onDelete: 'set null' }),
+    documentId: uuid('document_id'),
+    subject: varchar('subject', { length: 200 }),
+    stream: varchar('stream', { length: 100 }),
+    semester: varchar('semester', { length: 20 }),
+    section: varchar('section', { length: 50 }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index('idx_query_citations_subject').on(table.subject, table.createdAt),
+    index('idx_query_citations_doc').on(table.documentId),
+    index('idx_query_citations_scope').on(table.stream, table.semester, table.section, table.subject),
+    index('idx_query_citations_query').on(table.queryLogId),
+  ]
+);
+
+/**
  * 10. Audit Logs
  */
 export const auditLogs = pgTable(
@@ -298,6 +326,29 @@ export const studentUsersRelations = relations(studentUsers, ({ many }) => ({
   chatSessions: many(chatSessions),
   quizResults: many(quizResults),
   queryLogs: many(queryLogs),
+}));
+
+export const queryLogsRelations = relations(queryLogs, ({ one, many }) => ({
+  student: one(studentUsers, {
+    fields: [queryLogs.userId],
+    references: [studentUsers.id],
+  }),
+  topChunk: one(documentChunks, {
+    fields: [queryLogs.topChunkId],
+    references: [documentChunks.id],
+  }),
+  citations: many(queryCitations),
+}));
+
+export const queryCitationsRelations = relations(queryCitations, ({ one }) => ({
+  queryLog: one(queryLogs, {
+    fields: [queryCitations.queryLogId],
+    references: [queryLogs.id],
+  }),
+  chunk: one(documentChunks, {
+    fields: [queryCitations.chunkId],
+    references: [documentChunks.id],
+  }),
 }));
 
 export const chatSessionsRelations = relations(chatSessions, ({ one, many }) => ({

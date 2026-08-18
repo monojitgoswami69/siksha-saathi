@@ -46,11 +46,12 @@ export async function logStudentQuery({
   semester?: string;
   section?: string;
   topChunkId?: string;
-}): Promise<void> {
+}): Promise<string | null> {
   try {
-    await query(
+    const res = await query(
       `INSERT INTO query_logs (user_id, query_text, subject, stream, semester, section, top_chunk_id)
-       VALUES ($1, $2, $3, $4, $5, $6, $7);`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id;`,
       [
         userId || null,
         queryText,
@@ -61,7 +62,9 @@ export async function logStudentQuery({
         topChunkId || null,
       ]
     );
+    return res.rows[0]?.id || null;
   } catch (err: any) {
     console.error('Query log error:', err.message);
+    return null;
   }
 }

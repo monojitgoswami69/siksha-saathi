@@ -20,7 +20,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!requireRole(user, ['admin', 'superuser'])) {
+    if (!requireRole(user, ['admin'])) {
       return NextResponse.json({ detail: 'Admin permissions required' }, { status: 403 });
     }
 
