@@ -12,11 +12,11 @@ export async function GET(
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
 
-    if (!requireRole(user, ['admin', 'superuser', 'hod', 'faculty', 'assistant']) && user.uid !== (await params).uid) {
+    const { uid } = await params;
+
+    if (!requireRole(user, ['admin', 'superuser', 'hod', 'faculty', 'assistant']) && user.uid !== uid) {
       return NextResponse.json({ detail: 'Access denied' }, { status: 403 });
     }
-
-    const { uid } = await params;
 
     const studentRes = await query(
       'SELECT id, email, display_name, name, roll, stream, sem, batch, avatar_url FROM student_users WHERE id = $1;',

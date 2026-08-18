@@ -71,8 +71,8 @@ The platform enforces a strict two-tier user ecosystem separated by authenticati
 | `assistant` | `dashboard_users` | Teaching Assistant | Subject analysis, student query pattern inspection, document preview. |
 | `student` | `student_users` | Enrolled Student | Socratic AI tutoring, course notes preview & download, adaptive MCQ exams, profile customization. |
 
-### Secure Session Cookies & Next.js Edge Middleware
-Authentication uses **`httpOnly` secure cookies** with Next.js Edge Middleware ([`src/middleware.ts`](file:///Users/monojitgoswami/projects/siksha-saathi/src/middleware.ts)) for zero-flash server-side route protection and complete immunity against client-side XSS token theft:
+### Secure Session Cookies & Next.js Proxy
+Authentication uses **`httpOnly` secure cookies** with Next.js Proxy ([`src/proxy.ts`](file:///Users/monojitgoswami/projects/siksha-saathi/src/proxy.ts)) for zero-flash server-side route protection and complete immunity against client-side XSS token theft:
 
 - **Student Session Cookie (`siksha_student_session`)**:
   - `httpOnly: true`, `sameSite: 'lax'`, `path: '/'`, `secure: production`.
@@ -80,7 +80,7 @@ Authentication uses **`httpOnly` secure cookies** with Next.js Edge Middleware (
 - **Admin Session Cookie (`siksha_admin_session`)**:
   - `httpOnly: true`, `sameSite: 'lax'`, `path: '/'`, `secure: production`.
   - Protects administrative routes (`/admin/*`) and enforces RBAC checks via `requireRole(user, allowedRoles)`.
-- **Next.js Edge Middleware (`middleware.ts`)**:
+- **Next.js Proxy (`proxy.ts`)**:
   - Intercepts requests on the server before page rendering.
   - Automatically redirects unauthenticated requests on `/admin/*` to `/admin/login` and `/chat` to `/login` without client-side page flash or layout shift.
   - Redirects logged-in users away from auth pages to their respective dashboards.

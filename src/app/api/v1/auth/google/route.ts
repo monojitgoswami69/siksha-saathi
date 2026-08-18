@@ -100,7 +100,7 @@ export async function POST(req: NextRequest) {
       avatar_url: student.avatar_url,
       stream: student.stream,
       sem: student.sem,
-      roll: student.roll_number,
+      roll: student.roll || student.roll_number || '',
       role: 'student',
       access_token: token,
       token,

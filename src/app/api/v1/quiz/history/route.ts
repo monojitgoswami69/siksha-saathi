@@ -27,7 +27,7 @@ export async function GET(req: NextRequest) {
       total_questions: r.total_questions,
       percentage: r.percentage,
       time_taken_seconds: r.time_taken_seconds,
-      submitted_at: r.submitted_at.toISOString(),
+      submitted_at: r.submitted_at ? new Date(r.submitted_at).toISOString() : new Date().toISOString(),
     }));
 
     const totalQuizzes = history.length;

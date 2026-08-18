@@ -50,7 +50,7 @@ export async function GET(req: NextRequest) {
         filename: row.meta?.title || row.meta?.source || '',
         ...row.meta,
       },
-      timestamp: row.timestamp.toISOString(),
+      timestamp: row.timestamp ? new Date(row.timestamp).toISOString() : new Date().toISOString(),
     }));
 
     const totalQueries = weeklyData.reduce((acc, d) => acc + d.queries, 0);

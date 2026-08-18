@@ -33,7 +33,7 @@ Siksha Saathi is an AI-powered academic tutoring, institutional intelligence, an
 | **Search Engine** | Hybrid Search (pgvector Cosine Distance + Full-Text `tsvector` with Reciprocal Rank Fusion) |
 | **LLM & Embeddings** | Google Gemini (`gemini-3.1-flash-lite`, `gemini-embedding-001`) with Exponential Backoff Retries |
 | **File Storage** | Cloudflare R2 (S3-compatible, zero-egress) / Dropbox API |
-| **Authentication** | `httpOnly` secure cookies, Next.js Edge Middleware (`middleware.ts`), JWT (`jose`), `bcryptjs`, Google OAuth 2.0 |
+| **Authentication** | `httpOnly` secure cookies, Next.js Proxy (`proxy.ts`), JWT (`jose`), `bcryptjs`, Google OAuth 2.0 |
 | **Styling** | Vanilla CSS & TailwindCSS design tokens |
 
 ---
@@ -93,7 +93,7 @@ siksha-saathi/
 │   ├── lib/
 │   │   ├── client/             # Frontend API client and utilities
 │   │   └── server/             # Database pool, LLM, Embeddings, Storage, and Auth services
-│   ├── middleware.ts           # Next.js Edge Middleware for zero-flash server-side route protection
+│   ├── proxy.ts                # Next.js Proxy for zero-flash server-side route protection
 │   └── types/                  # Shared TypeScript interfaces
 ├── architecture.md             # Complete institutional architecture and design document
 ├── drizzle.config.ts           # Drizzle Kit configuration

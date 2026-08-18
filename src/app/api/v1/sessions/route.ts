@@ -28,8 +28,8 @@ export async function GET(req: NextRequest) {
         id: s.session_id,
         title: s.title,
         is_pinned: s.is_pinned,
-        created_at: s.created_at.toISOString(),
-        updated_at: s.updated_at.toISOString(),
+        created_at: s.created_at ? new Date(s.created_at).toISOString() : new Date().toISOString(),
+        updated_at: s.updated_at ? new Date(s.updated_at).toISOString() : new Date().toISOString(),
         message_count: s.message_count,
       })),
     });

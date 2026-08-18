@@ -77,7 +77,7 @@ export async function GET(req: NextRequest) {
         module: d.module,
         total_chunks: d.total_chunks,
         chunks_count: d.total_chunks,
-        created_at: d.created_at.toISOString(),
+        created_at: d.created_at ? new Date(d.created_at).toISOString() : new Date().toISOString(),
         uploaded_by: d.uploader_email || d.uploaded_by,
         dropbox_shared_link: d.dropbox_shared_link,
       })),

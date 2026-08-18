@@ -28,7 +28,7 @@ export async function POST(req: NextRequest) {
     const insertRes = await query(
       `INSERT INTO student_users (email, password_hash, display_name, name, stream, sem, roll, batch)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       RETURNING id, email, display_name, role, stream, sem, roll;`,
+       RETURNING id, email, display_name, stream, sem, roll;`,
       [
         cleanEmail,
         hashedPassword,

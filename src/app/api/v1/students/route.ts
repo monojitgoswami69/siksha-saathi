@@ -45,7 +45,7 @@ export async function GET(req: NextRequest) {
         stream: s.stream || '',
         sem: s.sem || '',
         batch: s.batch || '',
-        created_at: s.created_at?.toISOString(),
+        created_at: s.created_at ? new Date(s.created_at).toISOString() : new Date().toISOString(),
       })),
       total: res.rowCount,
     });

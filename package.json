@@ -7,7 +7,7 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint",
+    "lint": "tsc --noEmit",
     "get-dropbox-token": "node scripts/get-dropbox-token.mjs",
     "db:init": "node db-scripts/init-schema.mjs",
     "db:seed": "node db-scripts/seed.mjs",

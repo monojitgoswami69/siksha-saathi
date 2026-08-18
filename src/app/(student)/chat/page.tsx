@@ -1,6 +1,6 @@
 'use client';
 
-import React from 'react';
+import React, { Suspense } from 'react';
 import { useSearchParams } from 'next/navigation';
 import TopAppBar from '@/components/student/layout/TopAppBar';
 import ChatArea from '@/components/student/chat/ChatArea';
@@ -8,7 +8,7 @@ import ChatInput from '@/components/student/chat/ChatInput';
 import { useChat } from '@/context/ChatContext';
 import { useStudentAuth } from '@/context/StudentAuthContext';
 
-export default function ChatPage() {
+function ChatContent() {
   const searchParams = useSearchParams();
   const documentId = searchParams?.get('document_id') || undefined;
 
@@ -34,5 +34,19 @@ export default function ChatPage() {
         isStreaming={isStreaming}
       />
     </div>
+  );
+}
+
+export default function ChatPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex-1 flex items-center justify-center bg-slate-50">
+          <div className="w-8 h-8 border-3 border-slate-200 border-t-indigo-600 rounded-full animate-spin"></div>
+        </div>
+      }
+    >
+      <ChatContent />
+    </Suspense>
   );
 }
