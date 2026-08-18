@@ -97,7 +97,7 @@ export default function StudentsPage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all"
           >
             <UserPlus className="w-4 h-4" />
-            <span>Batch Enroll Students</span>
+            <span>Bulk Enroll Students</span>
           </button>
           <button
             onClick={loadStudents}
@@ -149,7 +149,7 @@ export default function StudentsPage() {
           <div className="py-16 text-center">
             <Users className="w-12 h-12 text-slate-700 mx-auto mb-3" />
             <h4 className="text-sm font-bold text-white">No Students Found</h4>
-            <p className="text-xs text-slate-400 mt-1">Enroll students using the batch import button above.</p>
+            <p className="text-xs text-slate-400 mt-1">Use the bulk import button above to enroll students.</p>
           </div>
         ) : (
           <div className="overflow-x-auto">
@@ -201,8 +201,8 @@ export default function StudentsPage() {
                   <FileSpreadsheet className="w-5 h-5" />
                 </div>
                 <div>
-                  <h3 className="font-bold text-white text-base">Batch Enroll Students</h3>
-                  <p className="text-xs text-slate-400">Paste CSV/TSV with header: email, name, roll, stream, sem</p>
+                  <h3 className="font-bold text-white text-base">Bulk Enroll Students</h3>
+                  <p className="text-xs text-slate-400">Paste CSV/TSV with header: email, name, roll, stream, sem, section</p>
                 </div>
               </div>
               <button onClick={() => setShowEnrollModal(false)} className="p-1 text-slate-400 hover:text-white">

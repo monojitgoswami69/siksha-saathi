@@ -27,7 +27,6 @@ export default function AddDocumentPage() {
   const [section, setSection] = useState('cse1');
   const [subject, setSubject] = useState('Data Structures');
   const [module, setModule] = useState('Module 1');
-  const [general, setGeneral] = useState(false);
 
   const [curriculum, setCurriculum] = useState<Record<string, Record<string, string[]>>>({});
   const [filterStreams, setFilterStreams] = useState<string[]>([]);
@@ -87,11 +86,11 @@ export default function AddDocumentPage() {
         const formData = new FormData();
         formData.append('file', file);
         formData.append('title', file.name);
-        formData.append('stream', general ? 'General' : stream);
-        formData.append('semester', general ? 'General' : semester);
-        formData.append('section', general ? 'General' : section);
-        formData.append('subject', general ? 'General' : subject);
-        formData.append('module', general ? 'General' : module);
+        formData.append('stream', stream);
+        formData.append('semester', semester);
+        formData.append('section', section);
+        formData.append('subject', subject);
+        formData.append('module', module);
 
         await api.documents.ingest(formData);
       } catch (err: any) {
@@ -114,24 +113,29 @@ export default function AddDocumentPage() {
       </div>
 
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 space-y-6">
-        {/* General availability toggle */}
-        <label className="flex items-center gap-3 cursor-pointer select-none">
-          <input
-            type="checkbox"
-            checked={general}
-            onChange={(e) => setGeneral(e.target.checked)}
-            className="w-4 h-4 accent-indigo-500"
-          />
-          <span className="text-xs font-bold text-slate-200">
-            Make available to everyone (General)
-          </span>
-          <span className="text-[10px] text-slate-500">
-            When on, ignores stream/semester/section/subject and shows this to all students.
-          </span>
-        </label>
+        {/* General availability helper */}
+        <div className="flex items-center justify-between gap-3 flex-wrap">
+          <p className="text-[10px] text-slate-500 max-w-md">
+            Each scope dimension can be set to <span className="text-indigo-300 font-semibold">General</span> independently.
+            e.g. Semester = 1, Stream/Section = General → visible to <span className="text-slate-300">all stream/section students in semester 1 only</span>.
+          </p>
+          <button
+            type="button"
+            onClick={() => {
+              setStream('General');
+              setSemester('General');
+              setSection('General');
+              setSubject('General');
+              setModule('General');
+            }}
+            className="px-3 py-1.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-800 text-indigo-300 rounded-lg text-[11px] font-bold transition-colors"
+          >
+            Set all to General
+          </button>
+        </div>
 
         {/* Metadata Selectors */}
-        <div className={`grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 ${general ? 'opacity-40 pointer-events-none' : ''}`}>
+        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Stream</label>
             <select
@@ -139,6 +143,7 @@ export default function AddDocumentPage() {
               onChange={(e) => setStream(e.target.value)}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
             >
+              <option value="General">General (all streams)</option>
               {streamsForSelection.map((s) => (
                 <option key={s} value={s}>
                   {s}
@@ -159,6 +164,7 @@ export default function AddDocumentPage() {
                   Semester {s}
                 </option>
               ))}
+              <option value="General">General (all semesters)</option>
             </select>
           </div>
 
@@ -169,10 +175,11 @@ export default function AddDocumentPage() {
               value={section}
               onChange={(e) => setSection(e.target.value)}
               list="section-options"
-              placeholder="e.g. cse1 / cse2"
+              placeholder="e.g. cse1 / cse2 / General"
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
             />
             <datalist id="section-options">
+              <option value="General" />
               {filterSections.map((s) => (
                 <option key={s} value={s} />
               ))}
@@ -186,6 +193,7 @@ export default function AddDocumentPage() {
               onChange={(e) => setSubject(e.target.value)}
               className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
             >
+              <option value="General">General (all subjects)</option>
               {subjectsForSelection.map((s) => (
                 <option key={s} value={s}>
                   {s}

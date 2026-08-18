@@ -87,7 +87,9 @@ export default function KnowledgeBasePage() {
   const filtered = documents.filter((doc) =>
     (doc.title || doc.file_name || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
     (doc.subject || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
-    (doc.stream || '').toLowerCase().includes(searchTerm.toLowerCase())
+    (doc.stream || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (doc.section || '').toLowerCase().includes(searchTerm.toLowerCase()) ||
+    (doc.file_name || '').toLowerCase().includes(searchTerm.toLowerCase())
   );
 
   return (
@@ -151,6 +153,7 @@ export default function KnowledgeBasePage() {
                   <th className="py-3 px-4">Document Title</th>
                   <th className="py-3 px-4">Subject</th>
                   <th className="py-3 px-4">Stream / Sem</th>
+                  <th className="py-3 px-4">Section</th>
                   <th className="py-3 px-4">Status & Chunks</th>
                   <th className="py-3 px-4">Size</th>
                   <th className="py-3 px-4">Uploaded</th>
@@ -177,6 +180,9 @@ export default function KnowledgeBasePage() {
                       </td>
                       <td className="py-3.5 px-4 text-slate-300 font-medium">
                         <span className="uppercase">{doc.stream || 'CSE'}</span> / Sem {doc.semester || '1'}
+                      </td>
+                      <td className="py-3.5 px-4 text-slate-400 uppercase font-semibold">
+                        {doc.section || '—'}
                       </td>
                       <td className="py-3.5 px-4">
                         {status === 'processing' ? (

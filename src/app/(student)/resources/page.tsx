@@ -351,9 +351,17 @@ export default function ResourcesPage() {
                               Semester {doc.semester || '-'}
                             </span>
                             <span className="hidden sm:inline w-1 h-1 bg-slate-300 rounded-full"></span>
-                            <span className="truncate max-w-[150px]">
-                              {doc.stream || 'General Source'}
+                            <span className="truncate max-w-[120px] uppercase">
+                              {doc.stream || 'General'}
                             </span>
+                            {doc.section && (
+                              <>
+                                <span className="hidden sm:inline w-1 h-1 bg-slate-300 rounded-full"></span>
+                                <span className="truncate max-w-[100px] uppercase text-slate-500">
+                                  {doc.section}
+                                </span>
+                              </>
+                            )}
                           </div>
                         </div>
 
