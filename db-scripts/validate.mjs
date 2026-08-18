@@ -109,6 +109,7 @@ async function validate() {
       'curriculum',
       'query_logs',
       'query_citations',
+      'ingestion_jobs',
       'audit_logs',
     ];
 

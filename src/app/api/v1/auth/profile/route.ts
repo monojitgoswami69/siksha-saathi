@@ -68,13 +68,21 @@ export async function PUT(req: NextRequest) {
         [displayName || name || null, name || null, user.uid]
       );
     } else {
+      // Dashboard users: stream/role/department are admin-managed (Manage Faculty).
+      // Non-admins must NOT self-reassign stream (would bypass role scoping).
+      if (user.role !== 'admin' && body.stream) {
+        return NextResponse.json(
+          { detail: 'Stream/role/department are managed by an administrator.' },
+          { status: 403 }
+        );
+      }
       await query(
         `UPDATE dashboard_users
          SET display_name = COALESCE($1, display_name),
              stream = COALESCE($2, stream),
              updated_at = NOW()
          WHERE id = $3;`,
-        [displayName || name || null, stream || null, user.uid]
+        [displayName || name || null, user.role === 'admin' ? stream || null : null, user.uid]
       );
     }
 

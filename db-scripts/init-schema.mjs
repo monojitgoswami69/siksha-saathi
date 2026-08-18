@@ -320,6 +320,19 @@ async function initSchema() {
       ALTER TABLE query_citations ADD COLUMN IF NOT EXISTS document_id UUID;
       ALTER TABLE query_citations ADD COLUMN IF NOT EXISTS section VARCHAR(50);
 
+      CREATE TABLE IF NOT EXISTS ingestion_jobs (
+        id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+        document_id UUID REFERENCES documents(id) ON DELETE CASCADE,
+        status VARCHAR(20) NOT NULL DEFAULT 'pending',
+        attempts INT NOT NULL DEFAULT 0,
+        max_attempts INT NOT NULL DEFAULT 3,
+        locked_at TIMESTAMP WITH TIME ZONE,
+        error TEXT,
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+        updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+      );
+      CREATE INDEX IF NOT EXISTS idx_ingestion_jobs_status ON ingestion_jobs (status, created_at);
+
       CREATE TABLE IF NOT EXISTS audit_logs (
         id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
         user_id UUID,

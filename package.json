@@ -18,13 +18,14 @@
     "db:setup": "node db-scripts/init-schema.mjs && node db-scripts/seed.mjs && node db-scripts/validate.mjs",
     "db:generate": "drizzle-kit generate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "worker:dev": "cd ingestion-worker && npm run dev",
+    "worker:install": "cd ingestion-worker && npm install"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",
     "@aws-sdk/s3-request-presigner": "^3.1106.0",
     "@google/generative-ai": "0.24.1",
-    "@napi-rs/canvas": "^1.0.7",
     "bcryptjs": "3.0.3",
     "clsx": "2.1.1",
     "csv-parse": "7.0.2",
@@ -35,23 +36,17 @@
     "google-auth-library": "11.0.0",
     "jose": "6.2.8",
     "lucide-react": "1.31.0",
-    "mammoth": "1.12.1",
     "next": "^16.3.0",
-    "officeparser": "^7.7.0",
-    "pdf-parse": "1.1.4",
-    "pdfjs-dist": "^4.10.38",
     "pg": "8.23.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "react-markdown": "10.1.0",
     "remark-gfm": "4.0.1",
-    "tailwind-merge": "3.6.0",
-    "tesseract.js": "7.0.0"
+    "tailwind-merge": "3.6.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "4.3.3",
     "@types/node": "26.2.0",
-    "@types/pdf-parse": "1.1.5",
     "@types/pg": "8.21.0",
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",

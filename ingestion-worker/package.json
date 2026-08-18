@@ -1,0 +1,30 @@
+{
+  "name": "siksha-saathi-ingestion-worker",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Long-running ingestion worker for Siksha Saathi (text extraction, OCR, embeddings). Deploy separately on Render.",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js"
+  },
+  "dependencies": {
+    "@aws-sdk/client-s3": "^3.1106.0",
+    "@aws-sdk/s3-request-presigner": "^3.1106.0",
+    "@google/generative-ai": "0.24.1",
+    "@napi-rs/canvas": "1.0.7",
+    "dropbox": "10.44.0",
+    "mammoth": "1.12.1",
+    "officeparser": "7.7.0",
+    "pdfjs-dist": "4.10.38",
+    "pg": "8.23.0",
+    "tesseract.js": "7.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "26.2.0",
+    "@types/pg": "8.21.0",
+    "tsx": "4.23.12",
+    "typescript": "^6.0.3"
+  }
+}

@@ -1,25 +1,15 @@
 /**
- * Native Document Processing & OCR Pipeline
- *
- * - PDF: accurate per-page text via pdfjs-dist; per-page text-density detection;
- *   image-only / scanned pages are rendered to PNG (@napi-rs/canvas) and OCR'd
- *   via Tesseract so image content becomes searchable, citable text.
- * - DOCX: mammoth.
- * - PPTX: officeparser (reliable text extraction — replaces the broken utf-8 fallback).
- * - Markdown / TXT / CSV: native utf-8 with paragraph-aware splitting.
- * - Images: Tesseract OCR.
- *
- * Every chunk carries rich metadata (page, fileName, paragraphId, chunkType,
- * charStart/charEnd) so the model can emit precise, clickable references.
+ * Document extraction & paragraph-aware chunking (worker side).
+ * Same semantics as the web app's pipeline, but uses the singleton Tesseract
+ * worker and caps OCR rendering for very large scanned PDFs.
  */
-
 import { getDocument } from 'pdfjs-dist/legacy/build/pdf.mjs';
 import { createCanvas, Path2D, DOMMatrix, ImageData } from '@napi-rs/canvas';
 import mammoth from 'mammoth';
-import { createWorker } from 'tesseract.js';
 import { OfficeParser } from 'officeparser';
+import { ocrImageBuffer } from './ocr.js';
 
-// pdfjs-dist render path expects these as globals when running in Node.
+// pdfjs render path expects these as globals in Node.
 function ensureCanvasGlobals() {
   if (!(globalThis as any).Path2D) (globalThis as any).Path2D = Path2D;
   if (!(globalThis as any).DOMMatrix) (globalThis as any).DOMMatrix = DOMMatrix;
@@ -27,18 +17,18 @@ function ensureCanvasGlobals() {
 }
 ensureCanvasGlobals();
 
+const MIN_TEXT_CHARS_PER_PAGE = parseInt(process.env.OCR_MIN_TEXT_CHARS || '20', 10);
+const OCR_MAX_PAGES = parseInt(process.env.OCR_MAX_PAGES || '50', 10);
+
 export interface ExtractedPage {
   pageNumber: number;
   text: string;
-  /** true when this page's text came from OCR (image/scanned page). */
   isImage?: boolean;
 }
-
 export interface ExtractionResult {
   fullText: string;
   pages: ExtractedPage[];
 }
-
 export interface DocumentChunk {
   chunkIndex: number;
   totalChunks: number;
@@ -58,32 +48,7 @@ export interface DocumentChunk {
   module?: string;
 }
 
-const MIN_TEXT_CHARS_PER_PAGE = 20; // below this, a PDF page is treated as image/scanned
-
-/**
- * Lazily create a Tesseract worker and recognize an image buffer.
- */
-async function ocrImageBuffer(buffer: Buffer): Promise<string> {
-  try {
-    const worker = await createWorker('eng');
-    const ret = await worker.recognize(buffer);
-    await worker.terminate();
-    return (ret.data.text || '').trim();
-  } catch (err: any) {
-    console.error('Tesseract OCR error:', err.message);
-    return '';
-  }
-}
-
-/**
- * Render a single PDF page to a PNG Buffer for OCR.
- * Returns null if rendering is unavailable (graceful degradation).
- */
-async function renderPdfPageToPng(
-  doc: any,
-  pageNum: number,
-  scale = 2
-): Promise<Buffer | null> {
+async function renderPdfPageToPng(doc: any, pageNum: number, scale = 2): Promise<Buffer | null> {
   try {
     const page = await doc.getPage(pageNum);
     const viewport = page.getViewport({ scale });
@@ -99,10 +64,6 @@ async function renderPdfPageToPng(
   }
 }
 
-/**
- * Extract text from a PDF buffer with accurate per-page tracking and OCR
- * fallback for image-only / scanned pages.
- */
 export async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
   const pages: ExtractedPage[] = [];
   let doc: any = null;
@@ -113,19 +74,17 @@ export async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
       disableFontFace: true,
     } as any).promise;
 
+    let ocrRendered = 0;
     for (let pageNum = 1; pageNum <= doc.numPages; pageNum++) {
       let text = '';
       try {
         const page = await doc.getPage(pageNum);
         const tc = await page.getTextContent();
-        // Reconstruct text, inserting line breaks on Y-axis jumps (pdfjs ordering)
         let lastY: number | null = null;
         const parts: string[] = [];
         for (const item of tc.items as any[]) {
           const y = item.transform?.[5];
-          if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) {
-            parts.push('\n');
-          }
+          if (lastY !== null && y !== undefined && Math.abs(y - lastY) > 2) parts.push('\n');
           parts.push(item.str ?? '');
           lastY = y ?? lastY;
         }
@@ -134,11 +93,11 @@ export async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
         console.warn(`PDF page ${pageNum} text extraction error:`, e.message);
       }
 
-      // Per-page OCR detection: low text density => image/scanned page.
-      if (text.length < MIN_TEXT_CHARS_PER_PAGE) {
+      if (text.length < MIN_TEXT_CHARS_PER_PAGE && ocrRendered < OCR_MAX_PAGES) {
         const png = await renderPdfPageToPng(doc, pageNum);
         if (png) {
           const ocrText = await ocrImageBuffer(png);
+          ocrRendered++;
           if (ocrText.length > text.length) {
             pages.push({ pageNumber: pageNum, text: ocrText, isImage: true });
             continue;
@@ -152,32 +111,22 @@ export async function extractPdf(buffer: Buffer): Promise<ExtractionResult> {
   } catch (err: any) {
     console.warn('PDF parsing failed, falling back to whole-buffer OCR:', err.message);
     const ocrText = await ocrImageBuffer(buffer);
-    if (ocrText) {
-      pages.push({ pageNumber: 1, text: ocrText, isImage: true });
-    }
+    if (ocrText) pages.push({ pageNumber: 1, text: ocrText, isImage: true });
   } finally {
     if (doc) {
       try { await doc.destroy(); } catch {}
     }
   }
-
   const fullText = pages.map((p) => p.text).join('\n\n');
   return { fullText, pages: pages.length ? pages : [{ pageNumber: 1, text: fullText }] };
 }
 
-/**
- * Extract text from DOCX. mammoth gives one text blob; we keep page=1 and let
- * the chunker split by paragraph.
- */
 export async function extractDocx(buffer: Buffer): Promise<ExtractionResult> {
   const result = await mammoth.extractRawText({ buffer });
   const text = (result.value || '').trim();
   return { fullText: text, pages: [{ pageNumber: 1, text }] };
 }
 
-/**
- * Extract text from PPTX via officeparser (reliable text extraction).
- */
 export async function extractPptx(buffer: Buffer): Promise<ExtractionResult> {
   try {
     const ast = await OfficeParser.parseOffice(buffer, { fileType: 'pptx' } as any);
@@ -189,98 +138,55 @@ export async function extractPptx(buffer: Buffer): Promise<ExtractionResult> {
   }
 }
 
-/**
- * Extract text from an image / scanned file via Tesseract OCR.
- */
 export async function runOcrOnBuffer(buffer: Buffer): Promise<ExtractionResult> {
   const text = await ocrImageBuffer(buffer);
-  return {
-    fullText: text,
-    pages: [{ pageNumber: 1, text, isImage: true }],
-  };
+  return { fullText: text, pages: [{ pageNumber: 1, text, isImage: true }] };
 }
 
-/**
- * Extract Markdown: strip YAML front-matter, keep text (headings become paragraph
- * boundaries naturally via the chunker).
- */
 export function extractMarkdown(buffer: Buffer): ExtractionResult {
-  let text = buffer.toString('utf-8');
-  // Strip YAML front-matter
-  text = text.replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '');
-  text = text.trim();
+  let text = buffer.toString('utf-8').replace(/^---\s*\n[\s\S]*?\n---\s*\n/, '').trim();
   return { fullText: text, pages: [{ pageNumber: 1, text }] };
 }
 
-/**
- * Plain text / CSV / etc.
- */
 export function extractPlainText(buffer: Buffer): ExtractionResult {
   const text = buffer.toString('utf-8').trim();
   return { fullText: text, pages: [{ pageNumber: 1, text }] };
 }
 
-/**
- * Unified extractor based on mime-type or file extension.
- */
 export async function extractDocumentContent(
-  filename: string,
+  fileName: string,
   buffer: Buffer,
   mimeType?: string
 ): Promise<ExtractionResult> {
-  const ext = filename.split('.').pop()?.toLowerCase() || '';
+  const ext = fileName.split('.').pop()?.toLowerCase() || '';
   const mime = (mimeType || '').toLowerCase();
-
   if (mime.includes('pdf') || ext === 'pdf') return extractPdf(buffer);
-
   if (mime.includes('presentation') || ext === 'pptx') return extractPptx(buffer);
-
-  if (
-    mime.includes('wordprocessingml') ||
-    mime.includes('msword') ||
-    ext === 'docx' ||
-    ext === 'doc'
-  ) {
+  if (mime.includes('wordprocessingml') || mime.includes('msword') || ext === 'docx' || ext === 'doc')
     return extractDocx(buffer);
-  }
-
-  if (mime.includes('image') || ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp', 'tiff'].includes(ext)) {
+  if (mime.includes('image') || ['png','jpg','jpeg','webp','gif','bmp','tiff'].includes(ext))
     return runOcrOnBuffer(buffer);
-  }
-
   if (ext === 'md' || ext === 'markdown' || mime.includes('markdown')) return extractMarkdown(buffer);
-
-  // CSV, TXT, and any other text-based format
   return extractPlainText(buffer);
 }
 
-/**
- * Split a page's text into paragraphs, tracking character offsets within the page.
- */
 function splitParagraphs(text: string): Array<{ text: string; start: number }> {
   const out: Array<{ text: string; start: number }> = [];
   const re = /\n[ \t]*\n/g;
   let start = 0;
   let match: RegExpExecArray | null;
-  let idx = 0;
   while (start < text.length) {
     re.lastIndex = start;
     match = re.exec(text);
     const end = match ? match.index : text.length;
     const para = text.slice(start, end).trim();
-    if (para) {
-      out.push({ text: para, start });
-      idx++;
-    }
+    if (para) out.push({ text: para, start });
     if (!match) break;
     start = match.index + match[0].length;
   }
   return out;
 }
 
-/**
- * Split extracted pages into paragraph-aware chunks with rich metadata.
- */
 export function chunkExtractedDocument({
   extraction,
   fileName,
@@ -290,8 +196,8 @@ export function chunkExtractedDocument({
   section,
   subject,
   module,
-  chunkSize = 500,
-  chunkOverlap = 50,
+  chunkSize = parseInt(process.env.CHUNK_SIZE || '500', 10),
+  chunkOverlap = parseInt(process.env.CHUNK_OVERLAP || '50', 10),
 }: {
   extraction: ExtractionResult;
   fileName: string;
@@ -317,9 +223,7 @@ export function chunkExtractedDocument({
   for (const page of extraction.pages) {
     const pageText = page.text.trim();
     if (!pageText) continue;
-
     if (page.isImage) {
-      // OCR'd image page => one image chunk (citable, retrievable)
       rawChunks.push({
         text: pageText,
         pageStart: page.pageNumber,
@@ -329,7 +233,6 @@ export function chunkExtractedDocument({
       });
       continue;
     }
-
     const paragraphs = splitParagraphs(pageText);
     let paraIdx = 0;
     for (const para of paragraphs) {
@@ -356,7 +259,6 @@ export function chunkExtractedDocument({
     }
   }
 
-  // Fallback: if paragraph splitting yielded nothing but fullText exists
   if (rawChunks.length === 0 && extraction.fullText.trim()) {
     const text = extraction.fullText.trim();
     let start = 0;
@@ -364,15 +266,7 @@ export function chunkExtractedDocument({
       const end = Math.min(start + chunkSize, text.length);
       const chunkText = text.slice(start, end).trim();
       if (chunkText.length > 20) {
-        rawChunks.push({
-          text: chunkText,
-          pageStart: 1,
-          pageEnd: 1,
-          paragraphId: '1:1',
-          chunkType: 'text',
-          charStart: start,
-          charEnd: end,
-        });
+        rawChunks.push({ text: chunkText, pageStart: 1, pageEnd: 1, paragraphId: '1:1', chunkType: 'text', charStart: start, charEnd: end });
       }
       start += chunkSize - chunkOverlap;
     }

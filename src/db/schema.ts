@@ -351,6 +351,31 @@ export const queryCitationsRelations = relations(queryCitations, ({ one }) => ({
   }),
 }));
 
+/**
+ * 9c. Ingestion Jobs — DB-backed job queue consumed by the long-running
+ * ingestion worker (deployed separately, e.g. on Render). The Next.js app
+ * enqueues; the worker claims via FOR UPDATE SKIP LOCKED and processes.
+ */
+export const ingestionJobs = pgTable(
+  'ingestion_jobs',
+  {
+    id: uuid('id').defaultRandom().primaryKey(),
+    documentId: uuid('document_id')
+      .references(() => documents.id, { onDelete: 'cascade' })
+      .notNull(),
+    status: varchar('status', { length: 20 }).notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    maxAttempts: integer('max_attempts').notNull().default(3),
+    lockedAt: timestamp('locked_at', { withTimezone: true }),
+    error: text('error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+  },
+  (table) => [
+    index('idx_ingestion_jobs_status').on(table.status, table.createdAt),
+  ]
+);
+
 export const chatSessionsRelations = relations(chatSessions, ({ one, many }) => ({
   student: one(studentUsers, {
     fields: [chatSessions.userId],

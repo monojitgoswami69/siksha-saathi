@@ -16,14 +16,19 @@ export default function UserSettingsPage() {
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
 
+  const isNonAdmin = user?.role && user.role !== 'admin';
+
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
     setSaving(true);
     try {
       const payload: any = {
         displayName: displayName.trim(),
-        stream: stream.trim(),
       };
+      // Only admins may self-edit stream here (route also enforces this).
+      if (!isNonAdmin) {
+        payload.stream = stream.trim();
+      }
 
       if (newPassword) {
         if (!currentPassword) {
@@ -85,14 +90,17 @@ export default function UserSettingsPage() {
             </div>
 
             <div>
-              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Department / Stream</label>
+              <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
+                Department / Stream {isNonAdmin && <span className="text-slate-600 normal-case font-normal">(admin-managed)</span>}
+              </label>
               <div className="relative">
                 <Building2 className="w-4 h-4 text-slate-500 absolute left-3 top-3" />
                 <input
                   type="text"
                   value={stream}
                   onChange={(e) => setStream(e.target.value)}
-                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                  disabled={!!isNonAdmin}
+                  className="w-full pl-9 pr-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase focus:ring-2 focus:ring-indigo-500/30 outline-none disabled:opacity-60 disabled:cursor-not-allowed"
                 />
               </div>
             </div>

@@ -7,7 +7,7 @@ const __dirname = path.dirname(__filename);
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
-  serverExternalPackages: ['pdfjs-dist', '@napi-rs/canvas', 'officeparser', 'pdf-parse', 'tesseract.js', 'mammoth', 'pg', '@neondatabase/serverless', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
+  serverExternalPackages: ['pg', '@neondatabase/serverless', '@aws-sdk/client-s3', '@aws-sdk/s3-request-presigner'],
   images: {
     remotePatterns: [
       {

@@ -66,6 +66,7 @@ async function clearDb() {
 
   const tables = [
     'audit_logs',
+    'ingestion_jobs',
     'query_citations',
     'query_logs',
     'curriculum',
