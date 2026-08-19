@@ -19,6 +19,10 @@ export default function AddDocumentPage() {
   const { user } = useAdminAuth();
   const isScopedRole = user?.role && user.role !== 'admin'; // hod/faculty restricted to their streams
 
+  // Faculty assignments from auth/me — used to filter semesters/sections/subjects
+  const facultyAssignments = user?.faculty_assignments || [];
+  const hodStreams = user?.hod_streams || [];
+
   const [files, setFiles] = useState<File[]>([]);
   const [stream, setStream] = useState('cse');
   const [semester, setSemester] = useState('1');
@@ -52,26 +56,44 @@ export default function AddDocumentPage() {
   const streamsForSelection = filterStreams.length ? filterStreams : Object.keys(curriculum);
 
   // Non-admins (hod/faculty) may only upload into streams they're assigned to
-  // (hod_streams ∪ faculty_assignment streams). Server enforces this too.
   const allowedStreams = (user?.allowed_streams && user.allowed_streams.length > 0)
     ? user.allowed_streams
     : streamsForSelection;
   const streamsForRole = isScopedRole ? allowedStreams : streamsForSelection;
 
-  useEffect(() => {
-    if (isScopedRole && allowedStreams.length > 0) {
-      setStream((prev) => (allowedStreams.map((s) => s.toLowerCase()).includes(prev.toLowerCase()) ? prev : allowedStreams[0]));
-    }
-  }, [isScopedRole, allowedStreams.length]);
+  // For faculty: filter semesters/sections/subjects based on their assignments
+  const isHodForStream = (s: string) => hodStreams.map((h) => h.toLowerCase()).includes(s.toLowerCase());
 
-  const subjectsForSelection = curriculum[stream]?.[semester] || [
-    'Data Structures',
-    'Operating Systems',
-    'Algorithms',
-    'Database Management Systems',
-    'Computer Networks',
-    'Software Engineering',
-  ];
+  const semestersForRole = isScopedRole
+    ? (isHodForStream(stream)
+        ? Object.keys(curriculum[stream] || {})
+        : Array.from(new Set(facultyAssignments.filter((a) => a.stream.toLowerCase() === stream.toLowerCase()).map((a) => a.semester))))
+    : Object.keys(curriculum[stream] || { '1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [] });
+
+  const sectionsForRole = isScopedRole
+    ? (isHodForStream(stream)
+        ? filterSections
+        : Array.from(new Set(facultyAssignments
+            .filter((a) => a.stream.toLowerCase() === stream.toLowerCase() && (!semester || semester === 'General' || a.semester === semester))
+            .map((a) => a.section))))
+    : filterSections;
+
+  const subjectsForSelection = isScopedRole && !isHodForStream(stream)
+    ? Array.from(new Set(facultyAssignments
+        .filter((a) =>
+          a.stream.toLowerCase() === stream.toLowerCase() &&
+          (!semester || semester === 'General' || a.semester === semester) &&
+          (!section || section === 'General' || a.section.toLowerCase() === section.toLowerCase())
+        )
+        .map((a) => a.subject)))
+    : (curriculum[stream]?.[semester] || [
+        'Data Structures',
+        'Operating Systems',
+        'Algorithms',
+        'Database Management Systems',
+        'Computer Networks',
+        'Software Engineering',
+      ]);
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -172,7 +194,7 @@ export default function AddDocumentPage() {
               onChange={(e) => setSemester(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              {['1', '2', '3', '4', '5', '6', '7', '8'].map((s) => (
+              {semestersForRole.map((s) => (
                 <option key={s} value={s}>
                   Semester {s}
                 </option>
@@ -193,7 +215,7 @@ export default function AddDocumentPage() {
             />
             <datalist id="section-options">
               <option value="General" />
-              {filterSections.map((s) => (
+              {sectionsForRole.map((s) => (
                 <option key={s} value={s} />
               ))}
             </datalist>

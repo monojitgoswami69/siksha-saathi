@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jwtVerify } from 'jose';
 
-const JWT_SECRET = process.env.JWT_SECRET || 'siksha-saathi-dev-secret-key-change-in-production';
-const secretKey = new TextEncoder().encode(JWT_SECRET);
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET && process.env.NODE_ENV === 'production') {
+  throw new Error('CRITICAL SECURITY ERROR: JWT_SECRET environment variable is missing in production!');
+}
+const secretKey = new TextEncoder().encode(JWT_SECRET || 'siksha-saathi-dev-secret-key-change-in-production');
 
 const STUDENT_COOKIE_NAME = 'siksha_student_session';
 const ADMIN_COOKIE_NAME = 'siksha_admin_session';

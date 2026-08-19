@@ -7,6 +7,8 @@ import { api } from '@/lib/client/api';
 interface AdminUser extends User {
   stream?: string;
   allowed_streams?: string[];
+  faculty_assignments?: Array<{ stream: string; semester: string; section: string; subject: string }>;
+  hod_streams?: string[];
   organization_name?: string;
   department?: string;
 }
@@ -42,6 +44,8 @@ export function AdminAuthProvider({ children }: { children: React.ReactNode }) {
           token: '',
           stream: fresh.stream,
           allowed_streams: fresh.allowed_streams,
+          faculty_assignments: fresh.faculty_assignments,
+          hod_streams: fresh.hod_streams,
           organization_name: fresh.organization_name,
           department: fresh.department,
         });

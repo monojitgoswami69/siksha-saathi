@@ -392,12 +392,23 @@ export default function QuizTakingPage() {
               <div className="space-y-4">
                 {currentQuestion.options.map((option) => {
                   const isSelected = selectedAnswers[currentQuestion.id] === option.label;
+                  const isCorrectAnswer = option.label === currentQuestion.correct_option;
+                  const showCorrect = isReviewing && isCorrectAnswer;
+                  const showIncorrect = isReviewing && isSelected && !isCorrectAnswer;
 
                   let containerClasses =
                     'bg-white border border-slate-200/80 hover:border-[#5e81ac]/30 hover:shadow-lg hover:-translate-y-0.5';
                   let letterBoxClasses = 'bg-slate-50 border border-slate-100 text-[#4c566a]/50';
 
-                  if (isSelected) {
+                  if (showCorrect) {
+                    containerClasses =
+                      'bg-green-50 border-green-500 shadow-[0_10px_25px_rgba(34,197,94,0.15)] ring-1 ring-green-500/20';
+                    letterBoxClasses = 'bg-green-500 text-white border-transparent shadow-md';
+                  } else if (showIncorrect) {
+                    containerClasses =
+                      'bg-red-50 border-red-500 shadow-[0_10px_25px_rgba(239,68,68,0.15)] ring-1 ring-red-500/20';
+                    letterBoxClasses = 'bg-red-500 text-white border-transparent shadow-md';
+                  } else if (isSelected) {
                     containerClasses =
                       'bg-white border-[#5e81ac] shadow-[0_10px_25px_rgba(94,129,172,0.15)] ring-1 ring-[#5e81ac]/20';
                     letterBoxClasses = 'bg-[#5e81ac] text-white border-transparent shadow-md';
@@ -419,11 +430,19 @@ export default function QuizTakingPage() {
                         </span>
                         <span
                           className={`text-[17px] font-bold flex-1 text-[#4c566a] transition-colors group-hover:text-[#2e3440] ${
-                            isSelected ? 'text-[#2e3440]' : ''
+                            isSelected || showCorrect || showIncorrect ? 'text-[#2e3440]' : ''
                           }`}
                         >
                           {option.text}
                         </span>
+                        {/* Show check/cross icon in review mode */}
+                        {showCorrect && (
+                          <span className="material-symbols-outlined text-green-500 text-2xl">check_circle</span>
+                        )}
+                        {showIncorrect && (
+                          <span className="material-symbols-outlined text-red-500 text-2xl">cancel</span>
+                        )}
+                        {!isReviewing && (
                         <div
                           className={`w-7 h-7 shrink-0 rounded-full border-2 flex items-center justify-center transition-all ${
                             isSelected
@@ -435,6 +454,7 @@ export default function QuizTakingPage() {
                             <div className="w-3.5 h-3.5 bg-[#5e81ac] rounded-full shadow-sm animate-in zoom-in-50 duration-300"></div>
                           )}
                         </div>
+                        )}
                       </div>
                     </button>
                   );
@@ -444,9 +464,22 @@ export default function QuizTakingPage() {
               {/* Explanation box during review mode */}
               {isReviewing && currentQuestion.explanation && (
                 <div className="mt-12 bg-blue-50 border border-blue-100 rounded-3xl p-8 animate-in slide-in-from-bottom-5 duration-500">
-                  <h4 className="text-[12px] font-black text-[#5e81ac] uppercase tracking-widest mb-4">
-                    EXPLANATION
-                  </h4>
+                  <div className="flex items-center gap-2 mb-4">
+                    {selectedAnswers[currentQuestion.id] === currentQuestion.correct_option ? (
+                      <span className="text-[12px] font-black text-green-600 uppercase tracking-widest flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-green-500 text-base">check_circle</span>
+                        CORRECT
+                      </span>
+                    ) : (
+                      <span className="text-[12px] font-black text-red-500 uppercase tracking-widest flex items-center gap-1.5">
+                        <span className="material-symbols-outlined text-red-500 text-base">cancel</span>
+                        INCORRECT
+                      </span>
+                    )}
+                    <span className="text-[12px] font-bold text-[#5e81ac] uppercase tracking-widest ml-auto">
+                      Correct Answer: {currentQuestion.correct_option}
+                    </span>
+                  </div>
                   <p className="text-base font-medium text-[#4c566a] leading-relaxed">
                     {currentQuestion.explanation}
                   </p>

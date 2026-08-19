@@ -22,8 +22,9 @@ export async function GET(req: NextRequest) {
       }
       const row = dbRes.rows[0];
       // Resolve allowed streams (hod_streams ∪ faculty_assignment streams)
-      const { getAllowedStreams } = await import('@/lib/server/analyticsScope');
+      const { getAllowedStreams, resolveScope } = await import('@/lib/server/analyticsScope');
       const allowedStreams = await getAllowedStreams(user);
+      const scope = await resolveScope(user);
       return NextResponse.json({
         uid: row.id,
         email: row.email,
@@ -31,10 +32,11 @@ export async function GET(req: NextRequest) {
         display_name: row.display_name,
         stream: row.stream,
         allowed_streams: allowedStreams,
+        faculty_assignments: scope.assignments,
+        hod_streams: scope.hodStreams,
         organization_name: row.organization_name,
         department: row.department,
         scope: 'dashboard',
-        authenticated: true,
       });
     } else {
       const dbRes = await query(

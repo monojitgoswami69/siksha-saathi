@@ -4,11 +4,17 @@ import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { api } from '@/lib/client/api';
 import { useToast } from '@/context/ToastContext';
+import { useAdminAuth } from '@/context/AdminAuthContext';
 import { Sparkles } from 'lucide-react';
 
 export default function AddTextPage() {
   const router = useRouter();
   const { showSuccess, showError } = useToast();
+  const { user } = useAdminAuth();
+  const isScopedRole = user?.role && user.role !== 'admin';
+  const facultyAssignments = user?.faculty_assignments || [];
+  const hodStreams = user?.hod_streams || [];
+  const isHodForStream = (s: string) => hodStreams.map((h) => h.toLowerCase()).includes(s.toLowerCase());
 
   const [title, setTitle] = useState('');
   const [content, setContent] = useState('');
@@ -40,14 +46,40 @@ export default function AddTextPage() {
   }, []);
 
   const streamsForSelection = filterStreams.length ? filterStreams : Object.keys(curriculum);
-  const subjectsForSelection = curriculum[stream]?.[semester] || [
-    'Data Structures',
-    'Operating Systems',
-    'Algorithms',
-    'Database Management Systems',
-    'Computer Networks',
-    'Software Engineering',
-  ];
+  const allowedStreams = (user?.allowed_streams && user.allowed_streams.length > 0)
+    ? user.allowed_streams : streamsForSelection;
+  const streamsForRole = isScopedRole ? allowedStreams : streamsForSelection;
+
+  const semestersForRole = isScopedRole
+    ? (isHodForStream(stream)
+        ? Object.keys(curriculum[stream] || {})
+        : Array.from(new Set(facultyAssignments.filter((a) => a.stream.toLowerCase() === stream.toLowerCase()).map((a) => a.semester))))
+    : Object.keys(curriculum[stream] || { '1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [] });
+
+  const sectionsForRole = isScopedRole
+    ? (isHodForStream(stream)
+        ? filterSections
+        : Array.from(new Set(facultyAssignments
+            .filter((a) => a.stream.toLowerCase() === stream.toLowerCase() && (!semester || semester === 'General' || a.semester === semester))
+            .map((a) => a.section))))
+    : filterSections;
+
+  const subjectsForSelection = isScopedRole && !isHodForStream(stream)
+    ? Array.from(new Set(facultyAssignments
+        .filter((a) =>
+          a.stream.toLowerCase() === stream.toLowerCase() &&
+          (!semester || semester === 'General' || a.semester === semester) &&
+          (!section || section === 'General' || a.section.toLowerCase() === section.toLowerCase())
+        )
+        .map((a) => a.subject)))
+    : (curriculum[stream]?.[semester] || [
+        'Data Structures',
+        'Operating Systems',
+        'Algorithms',
+        'Database Management Systems',
+        'Computer Networks',
+        'Software Engineering',
+      ]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -114,8 +146,7 @@ export default function AddTextPage() {
               onChange={(e) => setStream(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              <option value="General">General (all streams)</option>
-              {streamsForSelection.map((s) => (
+              {streamsForRole.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
@@ -130,7 +161,7 @@ export default function AddTextPage() {
               onChange={(e) => setSemester(e.target.value)}
               className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
-              {['1', '2', '3', '4', '5', '6', '7', '8'].map((s) => (
+              {semestersForRole.map((s) => (
                 <option key={s} value={s}>
                   Semester {s}
                 </option>
@@ -151,7 +182,7 @@ export default function AddTextPage() {
             />
             <datalist id="section-options">
               <option value="General" />
-              {filterSections.map((s) => (
+              {sectionsForRole.map((s) => (
                 <option key={s} value={s} />
               ))}
             </datalist>

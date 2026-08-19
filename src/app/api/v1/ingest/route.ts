@@ -78,28 +78,91 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ detail: 'File or content text is required' }, { status: 400 });
     }
 
-    // Non-admin (hod/faculty) uploads must target a stream they're allowed to
-    // teach in (their hod_streams ∪ faculty_assignment streams). No cross-stream.
+    // Non-admin (hod/faculty) uploads must target a stream/semester/section/subject
+    // combination they're assigned to (hod_streams ∪ faculty_assignments). No cross-scope.
     if (user.scope === 'dashboard' && user.role !== 'admin') {
-      const { getAllowedStreams } = await import('@/lib/server/analyticsScope');
-      const allowed = await getAllowedStreams(user);
-      if (allowed.length === 0) {
-        return NextResponse.json(
-          { detail: 'You have no stream assignments. Contact the administrator.' },
-          { status: 403 }
+      const { resolveScope } = await import('@/lib/server/analyticsScope');
+      const scope = await resolveScope(user);
+      if (scope.mode === 'all') {
+        // Admin — no restriction (shouldn't reach here due to role check above)
+      } else {
+        // Check stream: must be in hod_streams OR a faculty_assignment stream
+        const allowedStreams = new Set(
+          [...scope.hodStreams, ...scope.assignments.map((a) => a.stream)].map((s) => s.toLowerCase())
         );
-      }
-      if (stream === 'General' || !stream) {
-        return NextResponse.json(
-          { detail: 'Please choose a specific stream you teach (General is admin-only).' },
-          { status: 400 }
-        );
-      }
-      if (!allowed.map((s) => s.toLowerCase()).includes(stream.toLowerCase())) {
-        return NextResponse.json(
-          { detail: `You are not assigned to the "${stream}" stream.` },
-          { status: 403 }
-        );
+        if (stream === 'General' || !stream) {
+          return NextResponse.json(
+            { detail: 'Please choose a specific stream you teach (General is admin-only).' },
+            { status: 400 }
+          );
+        }
+        if (!allowedStreams.has(stream.toLowerCase())) {
+          return NextResponse.json(
+            { detail: `You are not assigned to the "${stream}" stream.` },
+            { status: 403 }
+          );
+        }
+
+        // If semester is specified (not General), check it's in assignments
+        if (semester && semester !== 'General') {
+          const allowedSemesters = new Set(
+            scope.assignments
+              .filter((a) => a.stream.toLowerCase() === stream.toLowerCase())
+              .map((a) => a.semester)
+          );
+          // HOD gets all semesters within their streams
+          if (scope.hodStreams.map((s) => s.toLowerCase()).includes(stream.toLowerCase())) {
+            // HOD can upload to any semester in their stream — skip semester check
+          } else if (allowedSemesters.size > 0 && !allowedSemesters.has(semester)) {
+            return NextResponse.json(
+              { detail: `You are not assigned to semester ${semester} in stream ${stream}.` },
+              { status: 403 }
+            );
+          }
+        }
+
+        // If section is specified (not General), check it's in assignments
+        if (section && section !== 'General') {
+          const allowedSections = new Set(
+            scope.assignments
+              .filter(
+                (a) =>
+                  a.stream.toLowerCase() === stream.toLowerCase() &&
+                  (!semester || semester === 'General' || a.semester === semester)
+              )
+              .map((a) => a.section.toLowerCase())
+          );
+          if (scope.hodStreams.map((s) => s.toLowerCase()).includes(stream.toLowerCase())) {
+            // HOD can upload to any section in their stream — skip section check
+          } else if (allowedSections.size > 0 && !allowedSections.has(section.toLowerCase())) {
+            return NextResponse.json(
+              { detail: `You are not assigned to section "${section}" in ${stream} sem ${semester}.` },
+              { status: 403 }
+            );
+          }
+        }
+
+        // If subject is specified (not General), check it's in assignments
+        if (subject && subject !== 'General') {
+          const allowedSubjects = new Set(
+            scope.assignments
+              .filter(
+                (a) =>
+                  a.stream.toLowerCase() === stream.toLowerCase() &&
+                  (!semester || semester === 'General' || a.semester === semester) &&
+                  (!section || section === 'General' || a.section.toLowerCase() === section.toLowerCase())
+              )
+              .map((a) => a.subject.toLowerCase())
+          );
+          if (scope.hodStreams.map((s) => s.toLowerCase()).includes(stream.toLowerCase())) {
+            // HOD can upload to any subject in their stream — skip subject check
+          } else if (allowedSubjects.size > 0 && !allowedSubjects.has(subject.toLowerCase())) {
+            return NextResponse.json(
+              { detail: `You are not assigned to teach "${subject}" for this class.` },
+              { status: 403 }
+            );
+          }
+        }
       }
     }
 

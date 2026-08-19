@@ -14,9 +14,24 @@ export async function GET(
 
     const { documentId } = await params;
 
-    const docRes = await query('SELECT title, file_name FROM documents WHERE id = $1;', [documentId]);
+    const docRes = await query('SELECT title, file_name, stream, semester, section FROM documents WHERE id = $1;', [documentId]);
     if (docRes.rowCount === 0) {
       return NextResponse.json({ detail: 'Document not found' }, { status: 404 });
+    }
+
+    // Scope check: students can only access documents in their scope
+    if (user.scope === 'student') {
+      const profileRes = await query('SELECT stream, sem, section FROM student_users WHERE id = $1;', [user.uid]).catch(() => ({ rows: [], rowCount: 0 }));
+      if (profileRes.rowCount && profileRes.rowCount > 0) {
+        const p = profileRes.rows[0] as any;
+        const doc = docRes.rows[0] as any;
+        const streamOk = !doc.stream || doc.stream === 'General' || doc.stream.toLowerCase() === (p.stream || '').toLowerCase();
+        const semOk = !doc.semester || doc.semester === 'General' || doc.semester === p.sem;
+        const secOk = !doc.section || doc.section === 'General' || doc.section.toLowerCase() === (p.section || '').toLowerCase();
+        if (!streamOk || !semOk || !secOk) {
+          return NextResponse.json({ detail: 'Access denied for this material.' }, { status: 403 });
+        }
+      }
     }
 
     const chunksRes = await query(

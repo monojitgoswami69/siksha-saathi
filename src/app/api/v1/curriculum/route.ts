@@ -1,8 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
+import { getAuthUser } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
 
 export async function GET(req: NextRequest) {
   try {
+    const user = await getAuthUser(req);
+    if (!user) {
+      return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
+    }
+
     const { searchParams } = new URL(req.url);
     const stream = searchParams.get('stream');
     const semester = searchParams.get('semester');

@@ -25,14 +25,16 @@ export async function GET(req: NextRequest) {
     }
 
     // Parallel: fetch all filter data at once
-    const [streamRes, semRes, subjRes, sectionRes, curricRes] = await Promise.all([
+    const [streamRes, semRes, subjRes, sectionRes, curricRes, curricSectionRes] = await Promise.all([
       query("SELECT DISTINCT stream FROM documents WHERE stream IS NOT NULL AND stream != '';"),
       query("SELECT DISTINCT semester FROM documents WHERE semester IS NOT NULL AND semester != '';"),
       query("SELECT DISTINCT subject FROM documents WHERE subject IS NOT NULL AND subject != '';"),
       query(
         "SELECT DISTINCT section FROM documents WHERE section IS NOT NULL AND section != '' UNION SELECT DISTINCT section FROM student_users WHERE section IS NOT NULL AND section != '';"
       ),
-      query('SELECT stream, semester, subjects FROM curriculum ORDER BY stream ASC, semester ASC;'),
+      query('SELECT stream, semester, subjects, sections FROM curriculum ORDER BY stream ASC, semester ASC;'),
+      // Also extract sections from curriculum.sections JSONB array
+      query("SELECT DISTINCT jsonb_array_elements(sections)->>'name' as section FROM curriculum WHERE sections IS NOT NULL AND sections != '[]' AND sections != 'null';"),
     ]);
 
     // Build curriculum map strictly from DB
@@ -68,7 +70,12 @@ export async function GET(req: NextRequest) {
       ])
     ).sort();
 
-    const sections = Array.from(new Set(sectionRes.rows.map((r) => r.section).filter(Boolean))).sort();
+    const sections = Array.from(
+      new Set([
+        ...sectionRes.rows.map((r) => r.section).filter(Boolean),
+        ...curricSectionRes.rows.map((r) => r.section).filter(Boolean),
+      ])
+    ).sort();
 
     // Files: scope to student's stream/semester/section if student
     let files: any[] = [];
