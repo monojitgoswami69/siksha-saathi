@@ -25,7 +25,7 @@ export async function GET(req: NextRequest) {
       2
     );
     const weeklyRes = await query(
-      `SELECT DATE(q.created_at) as date, COUNT(*)::int as count
+      `SELECT DATE(q.created_at)::text as date, COUNT(*)::int as count
        FROM query_logs q
        WHERE q.created_at >= $1::timestamp${wsc.sql}
        GROUP BY DATE(q.created_at)

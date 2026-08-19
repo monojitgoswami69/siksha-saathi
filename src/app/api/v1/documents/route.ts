@@ -60,7 +60,7 @@ export async function GET(req: NextRequest) {
     let pIdx = dsc.nextIdx;
 
     if (stream && stream !== 'All') {
-      sql += ` AND (d.stream = $${pIdx} OR d.stream = 'General' OR d.stream IS NULL)`;
+      sql += ` AND (LOWER(d.stream) = LOWER($${pIdx}) OR d.stream = 'General' OR d.stream IS NULL)`;
       params.push(stream);
       pIdx++;
     }
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       pIdx++;
     }
     if (section && section !== 'All') {
-      sql += ` AND (d.section = $${pIdx} OR d.section = 'General' OR d.section IS NULL)`;
+      sql += ` AND (LOWER(d.section) = LOWER($${pIdx}) OR d.section = 'General' OR d.section IS NULL)`;
       params.push(section);
       pIdx++;
     }

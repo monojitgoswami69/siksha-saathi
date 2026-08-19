@@ -55,7 +55,7 @@ export async function POST(req: NextRequest) {
     let pIdx = 1;
 
     if (studentStream && studentStream !== 'All') {
-      whereFilter += ` AND (c.stream = $${pIdx} OR c.stream = 'General' OR c.stream IS NULL)`;
+      whereFilter += ` AND (LOWER(c.stream) = LOWER($${pIdx}) OR c.stream = 'General' OR c.stream IS NULL)`;
       params.push(studentStream);
       pIdx++;
     }
@@ -65,7 +65,7 @@ export async function POST(req: NextRequest) {
       pIdx++;
     }
     if (studentSection && studentSection !== 'All') {
-      whereFilter += ` AND (c.section = $${pIdx} OR c.section = 'General' OR c.section IS NULL)`;
+      whereFilter += ` AND (LOWER(c.section) = LOWER($${pIdx}) OR c.section = 'General' OR c.section IS NULL)`;
       params.push(studentSection);
       pIdx++;
     }
