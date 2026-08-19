@@ -45,6 +45,12 @@ export async function POST(req: NextRequest) {
     if (!user) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
+    if (user.scope !== 'student') {
+      return NextResponse.json(
+        { detail: 'Only students can create chat sessions' },
+        { status: 403 }
+      );
+    }
 
     const body = await req.json().catch(() => ({}));
     const title = body.title || 'New Chat';

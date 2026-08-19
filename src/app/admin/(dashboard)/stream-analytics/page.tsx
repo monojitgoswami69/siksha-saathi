@@ -2,7 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '@/lib/client/api';
-import { BarChart3, BookOpen, Layers, Filter, CheckCircle2, AlertCircle } from 'lucide-react';
+import { BookOpen, Filter } from 'lucide-react';
 
 export default function StreamAnalyticsPage() {
   const [semester, setSemester] = useState('All');
@@ -39,26 +39,28 @@ export default function StreamAnalyticsPage() {
   }, [semester]);
 
   return (
-    <div className="space-y-8 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto font-mono">
       {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white">Stream & Department Analytics</h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Stream & Department Analytics</h1>
+          <p className="text-xs text-neutral-500 mt-1">
             Department-wide breakdown of student questions, chunk density, and conceptual proficiency.
           </p>
         </div>
 
         {/* Semester Filter */}
-        <div className="flex items-center gap-2 bg-slate-900 border border-slate-800 p-1.5 rounded-2xl">
-          <Filter className="w-4 h-4 text-slate-400 ml-2" />
-          <span className="text-xs text-slate-400 font-semibold">Semester:</span>
+        <div className="flex items-center gap-1.5 bg-white border border-neutral-200 p-1.5 rounded-xl shadow-sm">
+          <Filter className="w-4 h-4 text-neutral-400 ml-2" />
+          <span className="text-xs text-neutral-500 font-semibold mr-1">Semester:</span>
           {['All', '1', '2', '3', '4', '5', '6'].map((sem) => (
             <button
               key={sem}
               onClick={() => setSemester(sem)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
-                semester === sem ? 'bg-indigo-600 text-white shadow' : 'text-slate-400 hover:text-white'
+              className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+                semester === sem
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100'
               }`}
             >
               {sem === 'All' ? 'All' : `Sem ${sem}`}
@@ -69,84 +71,88 @@ export default function StreamAnalyticsPage() {
 
       {/* Stream Overview Card */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Department Stream</span>
-          <h3 className="text-3xl font-black text-white mt-2 uppercase">{data.stream || 'CSE'}</h3>
-          <p className="text-[11px] text-slate-400 mt-1">Computer Science & Engineering</p>
+        <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Department Stream</span>
+          <h3 className="text-3xl font-bold text-neutral-900 mt-2 uppercase">{data.stream || 'CSE'}</h3>
+          <p className="text-xs text-neutral-500 mt-1">Computer Science & Engineering</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Total Doubts Logged</span>
-          <h3 className="text-3xl font-black text-indigo-400 mt-2">{data.total_queries}</h3>
-          <p className="text-[11px] text-slate-400 mt-1">Socratic queries in selected semester</p>
+        <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Total Doubts Logged</span>
+          <h3 className="text-3xl font-bold text-indigo-600 mt-2">{data.total_queries}</h3>
+          <p className="text-xs text-neutral-500 mt-1">Socratic queries in selected semester</p>
         </div>
 
-        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5">
-          <span className="text-xs font-bold text-slate-400 uppercase">Tracked Subjects</span>
-          <h3 className="text-3xl font-black text-emerald-400 mt-2">{data.subjects.length}</h3>
-          <p className="text-[11px] text-slate-400 mt-1">Active syllabus topics</p>
+        <div className="bg-white border border-neutral-200 rounded-xl p-5 shadow-sm">
+          <span className="text-xs font-semibold uppercase tracking-wider text-neutral-500">Tracked Subjects</span>
+          <h3 className="text-3xl font-bold text-emerald-600 mt-2">{data.subjects.length}</h3>
+          <p className="text-xs text-neutral-500 mt-1">Active syllabus topics</p>
         </div>
       </div>
 
       {/* Detailed Subject Table */}
-      <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8">
-        <h3 className="text-lg font-bold text-white mb-6">Subject Understanding & Query Density</h3>
+      <div className="bg-white border border-neutral-200 rounded-xl p-5 md:p-6 shadow-sm">
+        <h3 className="text-[15px] font-bold text-neutral-900 tracking-tight mb-5">Subject Understanding & Query Density</h3>
 
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead>
-              <tr className="border-b border-slate-800 text-slate-400 uppercase font-semibold">
-                <th className="py-3 px-4">Subject Name</th>
-                <th className="py-3 px-4">Total Questions</th>
-                <th className="py-3 px-4">Active Students</th>
-                <th className="py-3 px-4">Content Chunks</th>
-                <th className="py-3 px-4">Query Density</th>
-                <th className="py-3 px-4">Proficiency Score</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-slate-800/60">
-              {data.subjects.map((sub, i) => (
-                <tr key={i} className="hover:bg-slate-800/40 transition-colors">
-                  <td className="py-3.5 px-4 font-bold text-white flex items-center gap-2">
-                    <BookOpen className="w-4 h-4 text-indigo-400" />
-                    <span>{sub.subject}</span>
-                  </td>
-                  <td className="py-3.5 px-4 font-bold text-slate-200">{sub.total_queries}</td>
-                  <td className="py-3.5 px-4 text-slate-400">{sub.student_count} students</td>
-                  <td className="py-3.5 px-4 text-slate-400">{sub.chunk_count} chunks</td>
-                  <td className="py-3.5 px-4 font-mono text-slate-300">{sub.query_density} q/chunk</td>
-                  <td className="py-3.5 px-4">
-                    <div className="flex items-center gap-2">
-                      <span
-                        className={`font-bold ${
-                          sub.proficiency_score >= 75
-                            ? 'text-emerald-400'
-                            : sub.proficiency_score >= 60
-                            ? 'text-amber-400'
-                            : 'text-rose-400'
-                        }`}
-                      >
-                        {sub.proficiency_score}%
-                      </span>
-                      <div className="w-20 bg-slate-800 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full rounded-full ${
-                            sub.proficiency_score >= 75
-                              ? 'bg-emerald-500'
-                              : sub.proficiency_score >= 60
-                              ? 'bg-amber-500'
-                              : 'bg-rose-500'
-                          }`}
-                          style={{ width: `${sub.proficiency_score}%` }}
-                        />
-                      </div>
-                    </div>
-                  </td>
+        {loading ? (
+          <div className="py-12 text-center text-neutral-400 text-xs">Loading analytics...</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-xs">
+              <thead>
+                <tr className="border-b border-neutral-200 text-neutral-500 uppercase font-semibold">
+                  <th className="py-3 px-4">Subject Name</th>
+                  <th className="py-3 px-4">Total Questions</th>
+                  <th className="py-3 px-4">Active Students</th>
+                  <th className="py-3 px-4">Content Chunks</th>
+                  <th className="py-3 px-4">Query Density</th>
+                  <th className="py-3 px-4">Proficiency Score</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-neutral-100">
+                {data.subjects.map((sub, i) => (
+                  <tr key={i} className="hover:bg-neutral-50/80 transition-colors">
+                    <td className="py-3.5 px-4 font-bold text-neutral-900 flex items-center gap-2">
+                      <BookOpen className="w-4 h-4 text-indigo-600 flex-shrink-0" />
+                      <span>{sub.subject}</span>
+                    </td>
+                    <td className="py-3.5 px-4 font-bold text-neutral-800">{sub.total_queries}</td>
+                    <td className="py-3.5 px-4 text-neutral-600">{sub.student_count} students</td>
+                    <td className="py-3.5 px-4 text-neutral-600">{sub.chunk_count} chunks</td>
+                    <td className="py-3.5 px-4 font-mono text-neutral-700">{sub.query_density} q/chunk</td>
+                    <td className="py-3.5 px-4">
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`font-bold ${
+                            sub.proficiency_score >= 75
+                              ? 'text-emerald-600'
+                              : sub.proficiency_score >= 60
+                              ? 'text-amber-600'
+                              : 'text-rose-600'
+                          }`}
+                        >
+                          {sub.proficiency_score}%
+                        </span>
+                        <div className="w-20 bg-neutral-100 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full rounded-full ${
+                              sub.proficiency_score >= 75
+                                ? 'bg-emerald-500'
+                                : sub.proficiency_score >= 60
+                                ? 'bg-amber-500'
+                                : 'bg-rose-500'
+                            }`}
+                            style={{ width: `${sub.proficiency_score}%` }}
+                          />
+                        </div>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </div>
     </div>
   );

@@ -81,20 +81,22 @@ export default function AdminDashboardPage() {
   const [showAllLogs, setShowAllLogs] = useState(false);
 
   useEffect(() => {
-    Promise.all([
-      api.admin.dashboard().catch(() => ({ weekly_data: [], activity: [], total_queries: 0 })),
-      fetch('/api/v1/stats')
-        .then((r) => r.json())
-        .catch(() => ({ total_documents: 0, total_chunks: 0, total_students: 0 })),
-    ]).then(([dashData, statsData]) => {
-      const formattedWeekly = (dashData.weekly_data || []).map((item: any) => ({
-        date: formatChartDate(item.date),
-        queries: item.queries || 0,
-      }));
-      setData({ ...dashData, weekly_data: formattedWeekly });
-      setStats(statsData);
-      setLoading(false);
-    });
+    api.admin
+      .dashboard()
+      .catch(() => ({ weekly_data: [], activity: [], total_queries: 0, total_documents: 0, total_chunks: 0, total_students: 0 }))
+      .then((dashData) => {
+        const formattedWeekly = (dashData.weekly_data || []).map((item: any) => ({
+          date: formatChartDate(item.date),
+          queries: item.queries || 0,
+        }));
+        setData({ ...dashData, weekly_data: formattedWeekly });
+        setStats({
+          total_documents: dashData.total_documents || 0,
+          total_chunks: dashData.total_chunks || 0,
+          total_students: dashData.total_students || 0,
+        });
+        setLoading(false);
+      });
   }, []);
 
   const formatAction = (action: string, meta: any) => {

@@ -1,7 +1,6 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { api } from '@/lib/client/api';
 import { useToast } from '@/context/ToastContext';
 import { Library, Plus, Trash2, Save, BookOpen, Layers } from 'lucide-react';
 
@@ -154,24 +153,24 @@ export default function ManageCurriculumPage() {
   if (loading) {
     return (
       <div className="flex items-center justify-center py-32">
-        <div className="w-8 h-8 border-3 border-indigo-500 border-t-transparent rounded-full animate-spin"></div>
+        <div className="w-8 h-8 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
+    <div className="space-y-6 max-w-5xl mx-auto font-mono">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-2xl font-extrabold text-white">Curriculum & Syllabus Structure</h1>
-          <p className="text-xs text-slate-400 mt-1">
+          <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Curriculum & Syllabus Structure</h1>
+          <p className="text-xs text-neutral-500 mt-1">
             Add streams, semesters, sections-per-semester & subjects. Removing a subject auto-deletes its tied materials.
           </p>
         </div>
         <button
           onClick={save}
           disabled={saving || !selectedStream || !selectedSemester}
-          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40"
+          className="flex items-center gap-2 px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all disabled:opacity-40 cursor-pointer"
         >
           <Save className="w-4 h-4" />
           <span>{saving ? 'Saving...' : 'Save Changes'}</span>
@@ -179,10 +178,10 @@ export default function ManageCurriculumPage() {
       </div>
 
       {/* Stream selector + add new stream */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-        <label className="block text-xs font-bold text-slate-400 uppercase">Stream (Course)</label>
+      <div className="bg-white border border-neutral-200 rounded-xl p-5 md:p-6 space-y-3 shadow-sm">
+        <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider">Stream (Course)</label>
         <div className="flex flex-wrap gap-2">
-          {streams.length === 0 && <span className="text-xs text-slate-500">No streams yet — add one below.</span>}
+          {streams.length === 0 && <span className="text-xs text-neutral-400">No streams yet — add one below.</span>}
           {streams.map((st) => (
             <button
               key={st}
@@ -190,8 +189,10 @@ export default function ManageCurriculumPage() {
                 setSelectedStream(st);
                 setSelectedSemester(semestersForStream[0] || '1');
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold uppercase transition-all ${
-                selectedStream === st ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'bg-slate-950 text-slate-400 hover:text-white'
+              className={`px-4 py-2 rounded-xl text-xs font-semibold uppercase transition-all ${
+                selectedStream === st
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200'
               }`}
             >
               {st}
@@ -204,31 +205,33 @@ export default function ManageCurriculumPage() {
             value={newStream}
             onChange={(e) => setNewStream(e.target.value)}
             placeholder="Add new stream (e.g. aiml)..."
-            className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/30 outline-none"
+            className="flex-1 px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
           />
-          <button type="submit" disabled={!newStream.trim()} className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40">
+          <button type="submit" disabled={!newStream.trim()} className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all disabled:opacity-40">
             <Plus className="w-4 h-4" /> Add Stream
           </button>
         </form>
       </div>
 
       {/* Semester selector + add new semester */}
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 space-y-3">
-        <label className="block text-xs font-bold text-slate-400 uppercase">Semester</label>
+      <div className="bg-white border border-neutral-200 rounded-xl p-5 md:p-6 space-y-3 shadow-sm">
+        <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider">Semester</label>
         <div className="flex flex-wrap gap-2">
           {semestersForStream.map((sem) => (
             <button
               key={sem}
               onClick={() => setSelectedSemester(sem)}
-              className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all ${
-                selectedSemester === sem ? 'bg-indigo-600 text-white shadow-lg shadow-indigo-600/30' : 'bg-slate-950 text-slate-400 hover:text-white'
+              className={`px-3.5 py-2 rounded-xl text-xs font-semibold transition-all ${
+                selectedSemester === sem
+                  ? 'bg-indigo-600 text-white shadow-sm'
+                  : 'bg-neutral-100 text-neutral-600 hover:text-neutral-900 hover:bg-neutral-200'
               }`}
             >
               Sem {sem}
             </button>
           ))}
           {semestersForStream.length === 0 && selectedStream && (
-            <span className="text-xs text-slate-500">No semesters for {selectedStream.toUpperCase()} yet.</span>
+            <span className="text-xs text-neutral-400">No semesters for {selectedStream.toUpperCase()} yet.</span>
           )}
         </div>
         {selectedStream && (
@@ -238,9 +241,9 @@ export default function ManageCurriculumPage() {
               value={newSemester}
               onChange={(e) => setNewSemester(e.target.value)}
               placeholder={`Add semester for ${selectedStream.toUpperCase()} (e.g. 5)...`}
-              className="flex-1 px-4 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white placeholder:text-slate-500 focus:ring-2 focus:ring-indigo-500/30 outline-none"
+              className="flex-1 px-4 py-2.5 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             />
-            <button type="submit" disabled={!newSemester.trim()} className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all disabled:opacity-40">
+            <button type="submit" disabled={!newSemester.trim()} className="flex items-center gap-1.5 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold shadow-sm transition-all disabled:opacity-40">
               <Plus className="w-4 h-4" /> Add Sem
             </button>
           </form>
@@ -251,9 +254,9 @@ export default function ManageCurriculumPage() {
       {selectedStream && selectedSemester ? (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
           {/* Subjects */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <BookOpen className="w-4 h-4 text-indigo-400" /> Subjects ({subjects.length})
+          <div className="bg-white border border-neutral-200 rounded-xl p-5 md:p-6 space-y-4 shadow-sm">
+            <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-2">
+              <BookOpen className="w-4 h-4 text-indigo-600" /> Subjects ({subjects.length})
             </h3>
             <form onSubmit={addSubject} className="flex gap-2">
               <input
@@ -261,30 +264,30 @@ export default function ManageCurriculumPage() {
                 value={newSubject}
                 onChange={(e) => setNewSubject(e.target.value)}
                 placeholder="Add subject..."
-                className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                className="flex-1 px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
               />
-              <button type="submit" disabled={!newSubject.trim()} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold disabled:opacity-40">
+              <button type="submit" disabled={!newSubject.trim()} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold disabled:opacity-40">
                 <Plus className="w-4 h-4" />
               </button>
             </form>
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {subjects.map((s, i) => (
-                <div key={i} className="flex items-center justify-between p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs">
-                  <span className="font-semibold text-white truncate">{s}</span>
-                  <button onClick={() => removeSubject(s)} className="p-1 text-slate-500 hover:text-rose-400" title="Remove (deletes tied materials on save)">
+                <div key={i} className="flex items-center justify-between p-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs">
+                  <span className="font-semibold text-neutral-900 truncate">{s}</span>
+                  <button onClick={() => removeSubject(s)} className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Remove (deletes tied materials on save)">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ))}
-              {subjects.length === 0 && <p className="text-[11px] text-slate-500">No subjects yet.</p>}
+              {subjects.length === 0 && <p className="text-[11px] text-neutral-400">No subjects yet.</p>}
             </div>
-            <p className="text-[10px] text-amber-400/70">⚠ Removing a subject deletes documents tied to it (on save).</p>
+            <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 p-2 rounded-lg">⚠ Removing a subject deletes documents tied to it (on save).</p>
           </div>
 
           {/* Sections (batches) */}
-          <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 space-y-4">
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-              <Layers className="w-4 h-4 text-indigo-400" /> Sections / Batches ({sections.length})
+          <div className="bg-white border border-neutral-200 rounded-xl p-5 md:p-6 space-y-4 shadow-sm">
+            <h3 className="text-sm font-bold text-neutral-900 uppercase tracking-wider flex items-center gap-2">
+              <Layers className="w-4 h-4 text-indigo-600" /> Sections / Batches ({sections.length})
             </h3>
             <form onSubmit={addSection} className="flex gap-2">
               <input
@@ -292,29 +295,29 @@ export default function ManageCurriculumPage() {
                 value={newSection}
                 onChange={(e) => setNewSection(e.target.value)}
                 placeholder="Add section (e.g. cse1)..."
-                className="flex-1 px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
+                className="flex-1 px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 placeholder:text-neutral-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
               />
-              <button type="submit" disabled={!newSection.trim()} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold disabled:opacity-40">
+              <button type="submit" disabled={!newSection.trim()} className="px-3 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-semibold disabled:opacity-40">
                 <Plus className="w-4 h-4" />
               </button>
             </form>
             <div className="space-y-2 max-h-72 overflow-y-auto">
               {sections.map((s, i) => (
-                <div key={i} className="flex items-center justify-between p-2.5 bg-slate-950 border border-slate-800 rounded-xl text-xs">
-                  <span className="font-semibold text-white uppercase truncate">{s}</span>
-                  <button onClick={() => removeSection(s)} className="p-1 text-slate-500 hover:text-rose-400" title="Remove section">
+                <div key={i} className="flex items-center justify-between p-2.5 bg-neutral-50 border border-neutral-200 rounded-xl text-xs">
+                  <span className="font-semibold text-neutral-900 uppercase truncate">{s}</span>
+                  <button onClick={() => removeSection(s)} className="p-1 text-neutral-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors" title="Remove section">
                     <Trash2 className="w-4 h-4" />
                   </button>
                 </div>
               ))}
-              {sections.length === 0 && <p className="text-[11px] text-slate-500">No sections defined (students/documents can still use any section text).</p>}
+              {sections.length === 0 && <p className="text-[11px] text-neutral-400">No sections defined (students/documents can still use any section text).</p>}
             </div>
           </div>
         </div>
       ) : (
-        <div className="bg-slate-900 border border-slate-800 rounded-3xl p-12 text-center">
-          <Library className="w-12 h-12 text-slate-700 mx-auto mb-3" />
-          <p className="text-sm text-slate-400">Add a stream and semester to begin defining subjects & sections.</p>
+        <div className="bg-white border border-neutral-200 rounded-xl p-12 text-center shadow-sm">
+          <Library className="w-12 h-12 text-neutral-300 mx-auto mb-3" />
+          <p className="text-sm text-neutral-500">Add a stream and semester to begin defining subjects & sections.</p>
         </div>
       )}
     </div>

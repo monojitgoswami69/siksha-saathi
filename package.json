@@ -17,8 +17,10 @@
     "db:reset": "node db-scripts/reset.mjs",
     "db:setup": "node db-scripts/init-schema.mjs && node db-scripts/seed.mjs && node db-scripts/validate.mjs",
     "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
+    "db:fresh": "node db-scripts/clear.mjs && drizzle-kit push && node db-scripts/seed.mjs",
     "worker:dev": "cd ingestion-worker && npm run dev",
     "worker:install": "cd ingestion-worker && npm install"
   },
@@ -26,6 +28,7 @@
     "@aws-sdk/client-s3": "^3.1106.0",
     "@aws-sdk/s3-request-presigner": "^3.1106.0",
     "@google/generative-ai": "0.24.1",
+    "@neondatabase/serverless": "^1.1.0",
     "bcryptjs": "3.0.3",
     "clsx": "2.1.1",
     "csv-parse": "7.0.2",

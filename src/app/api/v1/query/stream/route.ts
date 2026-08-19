@@ -135,7 +135,7 @@ export async function POST(req: NextRequest) {
       LEFT JOIN text_search t ON c.id = t.id
       WHERE v.id IS NOT NULL OR t.id IS NOT NULL
       ORDER BY rrf_score DESC, similarity DESC
-      LIMIT $${hybridPIdx};
+      LIMIT $${hybridPIdx}::int;
     `;
     hybridParams.push(topK);
 
@@ -158,7 +158,7 @@ export async function POST(req: NextRequest) {
                  1 - (embedding <=> $1) AS similarity
           FROM document_chunks c
           ${fallbackScope}
-          ORDER BY embedding <=> $1 LIMIT $${params.length + 2};
+          ORDER BY embedding <=> $1 LIMIT $${params.length + 2}::int;
         `;
         const res = await query(fallbackSql, fallbackParams);
         searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD);

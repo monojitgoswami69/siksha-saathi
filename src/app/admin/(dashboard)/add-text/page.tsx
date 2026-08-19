@@ -77,18 +77,18 @@ export default function AddTextPage() {
   };
 
   return (
-    <div className="space-y-8 max-w-4xl mx-auto">
+    <div className="space-y-6 max-w-4xl mx-auto font-mono">
       <div>
-        <h1 className="text-2xl font-extrabold text-white">Direct Raw Text Ingestion</h1>
-        <p className="text-xs text-slate-400 mt-1">
+        <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Direct Raw Text Ingestion</h1>
+        <p className="text-xs text-neutral-500 mt-1">
           Paste textbook notes, syllabus definitions, or lecture summaries directly into the RAG knowledge base.
         </p>
       </div>
 
-      <form onSubmit={handleSubmit} className="bg-slate-900 border border-slate-800 rounded-3xl p-6 md:p-8 space-y-6">
-        <div className="flex items-center justify-between gap-3 flex-wrap">
-          <p className="text-[10px] text-slate-500 max-w-md">
-            Each scope dimension can be set to <span className="text-indigo-300 font-semibold">General</span> independently
+      <form onSubmit={handleSubmit} className="bg-white border border-neutral-200 rounded-xl p-5 md:p-8 space-y-6 shadow-sm">
+        <div className="flex items-center justify-between gap-3 flex-wrap bg-neutral-50 p-3.5 rounded-xl border border-neutral-200">
+          <p className="text-[11px] text-neutral-600 max-w-md">
+            Each scope dimension can be set to <span className="text-indigo-600 font-semibold">General</span> independently
             (e.g. Semester = 1, Stream/Section = General → visible to all stream/section students in semester 1 only).
           </p>
           <button
@@ -100,7 +100,7 @@ export default function AddTextPage() {
               setSubject('General');
               setModule('General');
             }}
-            className="px-3 py-1.5 bg-indigo-950 hover:bg-indigo-900 border border-indigo-800 text-indigo-300 rounded-lg text-[11px] font-bold transition-colors"
+            className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-lg text-[11px] font-semibold transition-colors"
           >
             Set all to General
           </button>
@@ -108,11 +108,11 @@ export default function AddTextPage() {
 
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Stream</label>
+            <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">Stream</label>
             <select
               value={stream}
               onChange={(e) => setStream(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white uppercase font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
+              className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
               <option value="General">General (all streams)</option>
               {streamsForSelection.map((s) => (
@@ -124,11 +124,11 @@ export default function AddTextPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Semester</label>
+            <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">Semester</label>
             <select
               value={semester}
               onChange={(e) => setSemester(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
+              className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
               {['1', '2', '3', '4', '5', '6', '7', '8'].map((s) => (
                 <option key={s} value={s}>
@@ -140,14 +140,14 @@ export default function AddTextPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Section</label>
+            <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">Section</label>
             <input
               type="text"
               value={section}
               onChange={(e) => setSection(e.target.value)}
               list="section-options"
               placeholder="e.g. cse1 / General"
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
+              className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             />
             <datalist id="section-options">
               <option value="General" />
@@ -158,11 +158,11 @@ export default function AddTextPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Subject</label>
+            <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">Subject</label>
             <select
               value={subject}
               onChange={(e) => setSubject(e.target.value)}
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white font-bold focus:ring-2 focus:ring-indigo-500/30 outline-none"
+              className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             >
               <option value="General">General (all subjects)</option>
               {subjectsForSelection.map((s) => (
@@ -174,30 +174,30 @@ export default function AddTextPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Module / Unit</label>
+            <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">Module / Unit</label>
             <input
               type="text"
               value={module}
               onChange={(e) => setModule(e.target.value)}
               placeholder="e.g. Unit 1 / General"
-              className="w-full px-3 py-2 bg-slate-950 border border-slate-800 rounded-xl text-xs text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
+              className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
             />
           </div>
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">Document / Chapter Title</label>
+          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">Document / Chapter Title</label>
           <input
             type="text"
             value={title}
             onChange={(e) => setTitle(e.target.value)}
             placeholder="e.g. Module 3 - Virtual Memory & Page Faults"
-            className="w-full px-3.5 py-2.5 bg-slate-950 border border-slate-800 rounded-xl text-sm text-white focus:ring-2 focus:ring-indigo-500/30 outline-none"
+            className="w-full px-3.5 py-2.5 bg-white border border-neutral-200 rounded-xl text-sm text-neutral-900 placeholder:text-neutral-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
           />
         </div>
 
         <div>
-          <label className="block text-xs font-bold text-slate-400 uppercase mb-1.5">
+          <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">
             Course Text Content ({content.length} chars)
           </label>
           <textarea
@@ -206,14 +206,14 @@ export default function AddTextPage() {
             value={content}
             onChange={(e) => setContent(e.target.value)}
             placeholder="Paste syllabus text, definitions, code samples, or reference content..."
-            className="w-full p-4 bg-slate-950 border border-slate-800 rounded-2xl text-xs font-mono text-slate-200 focus:ring-2 focus:ring-indigo-500/30 outline-none leading-relaxed"
+            className="w-full p-4 bg-white border border-neutral-200 rounded-xl text-xs font-mono text-neutral-900 placeholder:text-neutral-400 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none leading-relaxed"
           />
         </div>
 
         <button
           type="submit"
           disabled={submitting || !content.trim()}
-          className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-600/30 transition-all disabled:opacity-40"
+          className="w-full flex items-center justify-center gap-2 py-3 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-semibold text-sm shadow-sm transition-all disabled:opacity-40 cursor-pointer"
         >
           <Sparkles className="w-4 h-4" />
           <span>{submitting ? 'Chunking & Embedding...' : 'Ingest Raw Text into pgvector'}</span>

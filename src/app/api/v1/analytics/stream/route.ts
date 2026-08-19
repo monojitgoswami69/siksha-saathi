@@ -15,7 +15,7 @@ export async function GET(req: NextRequest) {
     const semester = searchParams.get('semester') || searchParams.get('sem');
     const scope = await resolveScope(user);
 
-    // Chunk counts per subject (scoped)
+    // Build all 3 scope clauses + SQL upfront
     const csc = dashboardScopeClause(
       { stream: 'c.stream', semester: 'c.semester', section: 'c.section', subject: 'c.subject' },
       scope,
@@ -30,11 +30,7 @@ export async function GET(req: NextRequest) {
       cp++;
     }
     chunkSql += `${csc.sql} GROUP BY subject;`;
-    const chunkRes = await query(chunkSql, chunkParams);
-    const chunkMap = new Map<string, number>();
-    chunkRes.rows.forEach((r: any) => chunkMap.set(r.subject.toLowerCase(), r.chunk_count));
 
-    // Query counts per subject (query_citations, scoped)
     const qcs = dashboardScopeClause(
       { stream: 'qc.stream', semester: 'qc.semester', section: 'qc.section', subject: 'qc.subject' },
       scope,
@@ -54,7 +50,29 @@ export async function GET(req: NextRequest) {
       qp++;
     }
     qSql += `${qcs.sql} GROUP BY qc.subject;`;
-    const queryRes = await query(qSql, qParams);
+
+    const msc = dashboardScopeClause(
+      { stream: 'd.stream', semester: 'd.semester', section: 'd.section', subject: 'd.subject' },
+      scope,
+      2
+    );
+    let mSql = `SELECT d.id, d.title, d.file_name, d.subject,
+          COUNT(DISTINCT qc.query_log_id)::int as query_count
+       FROM documents d
+       LEFT JOIN query_citations qc ON qc.document_id = d.id
+       WHERE d.status = 'ready'${msc.sql}`;
+    const mParams: any[] = [...msc.params];
+    mSql += ` GROUP BY d.id, d.title, d.file_name, d.subject ORDER BY query_count DESC LIMIT 50;`;
+
+    // Run all 3 queries in parallel (was sequential)
+    const [chunkRes, queryRes, matRes] = await Promise.all([
+      query(chunkSql, chunkParams),
+      query(qSql, qParams),
+      query(mSql, mParams),
+    ]);
+
+    const chunkMap = new Map<string, number>();
+    chunkRes.rows.forEach((r: any) => chunkMap.set(r.subject.toLowerCase(), r.chunk_count));
 
     const subjects: any[] = [];
     const allSubjects = new Set([
@@ -80,20 +98,6 @@ export async function GET(req: NextRequest) {
     });
     subjects.sort((a, b) => b.total_queries - a.total_queries);
 
-    // Per-material heatmap
-    const msc = dashboardScopeClause(
-      { stream: 'd.stream', semester: 'd.semester', section: 'd.section', subject: 'd.subject' },
-      scope,
-      2
-    );
-    let mSql = `SELECT d.id, d.title, d.file_name, d.subject,
-          COUNT(DISTINCT qc.query_log_id)::int as query_count
-       FROM documents d
-       LEFT JOIN query_citations qc ON qc.document_id = d.id
-       WHERE d.status = 'ready'${msc.sql}`;
-    const mParams: any[] = [...msc.params];
-    mSql += ` GROUP BY d.id, d.title, d.file_name, d.subject ORDER BY query_count DESC LIMIT 50;`;
-    const matRes = await query(mSql, mParams);
     const materials = matRes.rows.map((r: any) => ({
       document_id: r.id,
       title: r.title,

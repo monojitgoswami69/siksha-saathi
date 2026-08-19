@@ -79,17 +79,21 @@ export default function QuizTakingPage() {
 
     try {
       const parsed = JSON.parse(stored) as QuizResponse;
-      setTimeRemaining(Math.max((parsed.questions?.length || 5) * 60, 900));
-      setQuizData(parsed);
+      const normalized: QuizResponse = {
+        ...parsed,
+        questions: Array.isArray(parsed.questions) ? parsed.questions : [],
+      };
+      setTimeRemaining(Math.max((normalized.questions.length || 5) * 60, 900));
+      setQuizData(normalized);
     } catch {
       router.push('/exam');
     }
   }, [router]);
 
-  const score = quizData
+  const score = quizData?.questions
     ? quizData.questions.filter((q) => selectedAnswers[q.id] === q.correct_option).length
     : 0;
-  const totalQuestions = quizData?.questions.length ?? 0;
+  const totalQuestions = quizData?.questions?.length ?? 0;
   const percentage = totalQuestions > 0 ? (score / totalQuestions) * 100 : 0;
 
   const handleSubmitQuiz = useCallback(async () => {
@@ -135,7 +139,7 @@ export default function QuizTakingPage() {
 
   // Build questions map for sidebar tracking
   const questionsMap =
-    quizData?.questions.map((q, idx) => ({
+    quizData?.questions?.map((q, idx) => ({
       id: idx + 1,
       questionId: q.id,
       status: reviewAnswers[q.id]

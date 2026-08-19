@@ -26,7 +26,7 @@ export function StudentAuthProvider({ children }: { children: React.ReactNode })
   const loadSession = useCallback(async () => {
     try {
       const fresh = await api.auth.getMe('student');
-      if (fresh && fresh.uid) {
+      if (fresh && fresh.uid && fresh.scope !== 'dashboard') {
         setUser({
           uid: fresh.uid,
           email: fresh.email,

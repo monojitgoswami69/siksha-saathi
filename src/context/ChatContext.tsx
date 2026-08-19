@@ -237,21 +237,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
       const decoder = new TextDecoder();
       let accumulated = '';
       let streamSources: CitationSource[] = [];
+      let buffer = '';
+      let streamDone = false;
 
-      while (true) {
+      while (!streamDone) {
         const { value, done } = await reader.read();
-        if (done) break;
+        streamDone = done;
 
-        const chunkText = decoder.decode(value, { stream: true });
-        const lines = chunkText.split('\n');
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split('\n');
+        buffer = lines.pop() || '';
 
         for (const line of lines) {
           if (line.startsWith('data: ')) {
             const dataStr = line.slice(6).trim();
-            if (dataStr === '[DONE]') break;
+            if (dataStr === '[DONE]') {
+              buffer = '';
+              streamDone = true;
+              break;
+            }
             try {
               const parsed = JSON.parse(dataStr);
-              // Capture source metadata from first SSE event
               if (parsed.sources && Array.isArray(parsed.sources)) {
                 streamSources = parsed.sources;
               }
