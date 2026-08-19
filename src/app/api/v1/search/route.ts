@@ -126,7 +126,7 @@ export async function POST(req: NextRequest) {
     let searchResults: any[] = [];
     try {
       const res = await query(hybridSql, hybridParams);
-      searchResults = res.rows.filter((r) => r.score > SIMILARITY_THRESHOLD || r.text_score > 0.05);
+      searchResults = res.rows.filter((r) => r.score > SIMILARITY_THRESHOLD || r.text_score >= 0.05);
     } catch (e: any) {
       console.warn('Hybrid search fallback:', e.message);
       const fallbackScope = whereFilter.replace(/\$(\d+)/g, (_, n) => `$${parseInt(n, 10) + 1}`);

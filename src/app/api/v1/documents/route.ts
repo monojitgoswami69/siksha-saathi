@@ -36,11 +36,13 @@ export async function GET(req: NextRequest) {
 
     // Dashboard role scoping: admin=all; hod/faculty scoped by their
     // assignments (multi-stream + faculty assignments) via dashboardScopeClause.
+    // Column refs MUST be qualified (d.) so the EXISTS subquery doesn't resolve
+    // them to faculty_assignments columns.
     const dsc = (user.scope === 'dashboard' && user.role !== 'admin' && user.role !== 'student')
       ? await (async () => {
           const scope = await resolveScope(user);
           return dashboardScopeClause(
-            { stream: 'stream', semester: 'semester', section: 'section', subject: 'subject' },
+            { stream: 'd.stream', semester: 'd.semester', section: 'd.section', subject: 'd.subject' },
             scope,
             1
           );
@@ -51,36 +53,35 @@ export async function GET(req: NextRequest) {
       SELECT id as document_id, id, title, file_name, mime_type, file_size_bytes as file_size,
              dropbox_path, dropbox_shared_link, stream, semester, section, subject, module,
              uploaded_by, uploader_email, total_chunks, created_at
-      FROM documents
+      FROM documents d
       WHERE 1=1
     `;
     const params: any[] = [...dsc.params];
     let pIdx = dsc.nextIdx;
 
     if (stream && stream !== 'All') {
-      sql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;
+      sql += ` AND (d.stream = $${pIdx} OR d.stream = 'General' OR d.stream IS NULL)`;
       params.push(stream);
       pIdx++;
     }
     if (semester && semester !== 'All') {
-      sql += ` AND (semester = $${pIdx} OR semester = 'General' OR semester IS NULL)`;
+      sql += ` AND (d.semester = $${pIdx} OR d.semester = 'General' OR d.semester IS NULL)`;
       params.push(semester);
       pIdx++;
     }
     if (section && section !== 'All') {
-      sql += ` AND (section = $${pIdx} OR section = 'General' OR section IS NULL)`;
+      sql += ` AND (d.section = $${pIdx} OR d.section = 'General' OR d.section IS NULL)`;
       params.push(section);
       pIdx++;
     }
     if (subject && subject !== 'All Subjects') {
-      sql += ` AND (LOWER(subject) = LOWER($${pIdx}) OR subject = 'General' OR subject IS NULL)`;
+      sql += ` AND (LOWER(d.subject) = LOWER($${pIdx}) OR d.subject = 'General' OR d.subject IS NULL)`;
       params.push(subject);
       pIdx++;
     }
 
     sql += dsc.sql;
-
-    sql += ` ORDER BY created_at DESC;`;
+    sql += ` ORDER BY d.created_at DESC;`;
 
     const res = await query(sql, params);
 

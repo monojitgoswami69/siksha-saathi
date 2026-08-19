@@ -1,0 +1,10 @@
+import pg from 'pg';
+import fs from 'fs';
+import path from 'path';
+const env = fs.readFileSync('.env.local','utf8');
+env.split('\n').forEach(l=>{const t=l.trim();if(t&&!t.startsWith('#')&&t.includes('=')){const[k,...r]=t.split('=');process.env[k.trim()]=r.join('=').trim();}});
+const p = new pg.Pool({connectionString:process.env.DATABASE_URL});
+const r = await p.query("SELECT id, document_id, chunk_index, raw_content, stream, semester, section, subject, (embedding is not null) as has_emb, vector_dims(embedding) as dims FROM document_chunks");
+console.log('chunks:', r.rows.length);
+for (const c of r.rows) console.log({id:c.id.slice(0,8), stream:c.stream, sem:c.semester, sec:c.section, subj:c.subject, has_emb:c.has_emb, dims:c.dims, text:(c.raw_content||'').slice(0,50)});
+await p.end();

@@ -5,6 +5,11 @@
  * uploaded file, runs extraction -> chunking -> batch embeddings -> chunk
  * insert, and marks the job + document done. Deploy separately (e.g. Render).
  */
+// Load .env from the worker folder or the parent (local dev). No-op in prod
+// where env vars are set by the host.
+try { (process as any).loadEnvFile?.('.env'); } catch {}
+try { (process as any).loadEnvFile?.('../.env.local'); } catch {}
+
 import { query, withTransaction, endPool } from './db.js';
 import { logAudit } from './audit.js';
 import { downloadFile } from './storage.js';

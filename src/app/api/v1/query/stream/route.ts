@@ -143,7 +143,7 @@ export async function POST(req: NextRequest) {
     try {
       const res = await query(hybridSql, hybridParams);
       searchResults = res.rows.filter(
-        (r) => r.similarity > SIMILARITY_THRESHOLD || r.text_score > 0.05
+        (r) => r.similarity > SIMILARITY_THRESHOLD || r.text_score >= 0.05
       );
     } catch (e: any) {
       console.warn('Hybrid search fallback to scoped vector search:', e.message);

@@ -1,0 +1,18 @@
+
+> siksha-saathi-ingestion-worker@1.0.0 dev
+> tsx watch src/index.ts
+
+🚀 Ingestion worker started. Polling for jobs...
+🔄 [Job 82086466-75d4-4d6a-a289-e6d0159c553b] Processing document b06b16e2-9031-45ba-adf1-4731191bbffd (attempt 1/3)
+✅ [Job 82086466-75d4-4d6a-a289-e6d0159c553b] Document "Welcome" indexed with 1 chunks.
+🔄 [Job 00ab56e2-fbaa-4630-a5be-f028561d5942] Processing document 36addb35-f220-41a3-a200-21807a0363a3 (attempt 1/3)
+✅ [Job 00ab56e2-fbaa-4630-a5be-f028561d5942] Document "DSA Binary Trees" indexed with 4 chunks.
+🔄 [Job 8505bd87-5c81-4038-bf92-b423bfa332ea] Processing document 389b9cb4-339d-4e2e-871e-20adde6fe218 (attempt 1/3)
+✅ [Job 8505bd87-5c81-4038-bf92-b423bfa332ea] Document "ECE Circuits" indexed with 1 chunks.
+🔄 [Job 6a70494e-1bb6-4c9f-9d6f-6ec1eb994655] Processing document a4fccf5d-4723-4217-80a6-2d3d43c93955 (attempt 1/3)
+✅ [Job 6a70494e-1bb6-4c9f-9d6f-6ec1eb994655] Document "OS Notes" indexed with 1 chunks.
+🔄 [Job b08fa4d2-2866-414d-9fab-9aa0046f73d5] Processing document 34ae53da-9469-41dc-a506-32447f568306 (attempt 1/3)
+Warning: Indexing all PDF objects
+✅ [Job b08fa4d2-2866-414d-9fab-9aa0046f73d5] Document "General Handbook PDF" indexed with 1 chunks.
+
+SIGTERM received, shutting down...

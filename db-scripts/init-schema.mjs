@@ -130,26 +130,6 @@ async function initSchema() {
     `);
     console.log('   ✅ Table: faculty_assignments');
 
-    // Backfill hod_streams / faculty_assignments from legacy single-stream +
-    // uploaded-documents data (one-time, idempotent).
-    await client.query(`
-      INSERT INTO hod_streams (user_id, stream)
-      SELECT id, stream FROM dashboard_users
-      WHERE role = 'hod' AND stream IS NOT NULL AND stream != ''
-      ON CONFLICT (user_id, stream) DO NOTHING;
-    `);
-    await client.query(`
-      INSERT INTO faculty_assignments (user_id, stream, semester, section, subject)
-      SELECT DISTINCT d.uploaded_by, d.stream, d.semester, d.section, d.subject
-      FROM documents d
-      WHERE d.uploaded_by IS NOT NULL
-        AND d.stream IS NOT NULL AND d.stream != 'General'
-        AND d.semester IS NOT NULL AND d.semester != 'General'
-        AND d.section IS NOT NULL AND d.section != 'General'
-        AND d.subject IS NOT NULL AND d.subject != 'General'
-      ON CONFLICT (user_id, stream, semester, section, subject) DO NOTHING;
-    `);
-
     // 3. Student Users
     await client.query(`
       CREATE TABLE IF NOT EXISTS student_users (
@@ -214,6 +194,26 @@ async function initSchema() {
       ALTER TABLE documents ADD COLUMN IF NOT EXISTS processing_progress INT DEFAULT 0;
     `);
     console.log('   ✅ Table: documents');
+
+    // Backfill hod_streams / faculty_assignments from legacy single-stream +
+    // uploaded-documents data (one-time, idempotent). Runs after documents exists.
+    await client.query(`
+      INSERT INTO hod_streams (user_id, stream)
+      SELECT id, stream FROM dashboard_users
+      WHERE role = 'hod' AND stream IS NOT NULL AND stream != ''
+      ON CONFLICT (user_id, stream) DO NOTHING;
+    `).catch(() => {}); // ignore if no legacy data
+    await client.query(`
+      INSERT INTO faculty_assignments (user_id, stream, semester, section, subject)
+      SELECT DISTINCT d.uploaded_by, d.stream, d.semester, d.section, d.subject
+      FROM documents d
+      WHERE d.uploaded_by IS NOT NULL
+        AND d.stream IS NOT NULL AND d.stream != 'General'
+        AND d.semester IS NOT NULL AND d.semester != 'General'
+        AND d.section IS NOT NULL AND d.section != 'General'
+        AND d.subject IS NOT NULL AND d.subject != 'General'
+      ON CONFLICT (user_id, stream, semester, section, subject) DO NOTHING;
+    `).catch(() => {});
 
     // 5. Document Chunks (Vector Store)
     await client.query(`

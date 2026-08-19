@@ -82,34 +82,34 @@ export async function GET(req: NextRequest) {
     if (user.role !== 'admin') {
       const scope = await resolveScope(user);
       dsc = dashboardScopeClause(
-        { stream: 'stream', semester: 'sem', section: 'section' },
+        { stream: 's.stream', semester: 's.sem', section: 's.section' },
         scope,
         1
       );
     }
 
-    let sql = 'SELECT id as uid, email, display_name, name, roll, stream, sem, section, created_at FROM student_users WHERE 1=1';
+    let sql = 'SELECT id as uid, email, display_name, name, roll, stream, sem, section, created_at FROM student_users s WHERE 1=1';
     const params: any[] = [...dsc.params];
     let pIdx = dsc.nextIdx;
 
     if (stream && stream !== 'All') {
-      sql += ` AND LOWER(stream) = LOWER($${pIdx})`;
+      sql += ` AND LOWER(s.stream) = LOWER($${pIdx})`;
       params.push(stream);
       pIdx++;
     }
     if (semester && semester !== 'All') {
-      sql += ` AND sem = $${pIdx}`;
+      sql += ` AND s.sem = $${pIdx}`;
       params.push(semester);
       pIdx++;
     }
     if (section && section !== 'All') {
-      sql += ` AND LOWER(section) = LOWER($${pIdx})`;
+      sql += ` AND LOWER(s.section) = LOWER($${pIdx})`;
       params.push(section);
       pIdx++;
     }
 
     sql += dsc.sql;
-    sql += ' ORDER BY created_at DESC;';
+    sql += ' ORDER BY s.created_at DESC;';
     const res = await query(sql, params);
 
     return NextResponse.json({

@@ -41,6 +41,7 @@ export async function getEmbedding(text: string, useCache = true): Promise<numbe
       result = await model.embedContent({
         content: { parts: [{ text }] },
         outputDimensionality: embeddingDim,
+        taskType: 'RETRIEVAL_QUERY' as any,
       } as any);
     } catch {
       result = await model.embedContent(text);

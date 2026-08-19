@@ -1,0 +1,1 @@
+An RC circuit contains a resistor and capacitor in series. The time constant tau equals R times C. The capacitor charges to 63.2% of the source voltage in one time constant. Kirchhoff's voltage law states the sum of voltages around a closed loop is zero.
