@@ -95,7 +95,8 @@ export async function POST(req: NextRequest) {
     // The hybrid SQL reuses $1 (vector) and $2 (text) as the first two params;
     // scope params must follow them. We shift scope params to start at index 3.
     const hybridParams: any[] = [vectorStr, cleanSearchText, ...params];
-    let hybridPIdx = 3;
+    // LIMIT param comes AFTER all scope params: position = 3 + params.length
+    const hybridPIdx = 3 + params.length;
     let scopeClauseForHybrid = whereFilter;
     // Re-number scope params from 3 onward
     scopeClauseForHybrid = whereFilter.replace(/\$(\d+)/g, (_, n) => {

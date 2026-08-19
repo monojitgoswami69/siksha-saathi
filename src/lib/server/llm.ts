@@ -46,7 +46,7 @@ export async function callWithRetry<T>(
 export const SOCRATIC_SYSTEM_INSTRUCTION = `You are Siksha Saathi, an expert Socratic tutor for college students.
 
 ## CRITICAL RULES
-1. **ONLY answer using the Reference Material provided below.** If reference material is empty or unrelated to the question, politely refuse: "I don't have information about this in your course materials."
+1. **Answer using the Reference Material provided below.** If the reference material is completely empty (no blocks), politely refuse: "I don't have information about this in your course materials." If the material is even tangentially related to the question, use it to guide your response — do NOT refuse just because the material covers a specific subtopic rather than the broad question.
 2. **USE THE SOCRATIC METHOD BY DEFAULT.**
    - Ask probing, thought-provoking questions to guide the student to discover the answer themselves.
    - Do NOT simply give away the direct answer immediately unless:
@@ -109,21 +109,10 @@ export async function streamSocraticChat({
     : `${SOCRATIC_SYSTEM_INSTRUCTION}\n\n## Reference Material\n(EMPTY - No relevant course content found. Refuse to answer outside course materials.)\n`;
 
   if (!apiKey || apiKey.startsWith('dummy')) {
-    const mockText = `Hello! I am your Siksha Saathi Socratic tutor.\n\nRegarding your question about "${userMessage}":\n\nWhat is the fundamental principle behind this concept in your course syllabus? [[#1]]`;
-    return new ReadableStream({
-      async start(controller) {
-        const encoder = new TextEncoder();
-        for (const word of mockText.split(' ')) {
-          controller.enqueue(encoder.encode(`data: ${JSON.stringify({ text: word + ' ' })}\n\n`));
-          await new Promise((r) => setTimeout(r, 25));
-        }
-        controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
-        controller.close();
-      },
-    });
+    throw new Error('GEMINI_API_KEY is not configured. Cannot process chat requests.');
   }
 
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
   const sanitizedHistory = sanitizeHistory(conversationHistory);
 
   try {
@@ -192,71 +181,8 @@ export async function generateQuizQuestions({
 }): Promise<QuizQuestionOutput[]> {
   const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-  const generateFallback = (): QuizQuestionOutput[] => [
-    {
-      id: 1,
-      question: `In the study of ${subject}, what is the primary role of core architectural abstraction?`,
-      options: [
-        { label: 'A', text: `Managing underlying system resources and operational throughput for ${subject}` },
-        { label: 'B', text: 'Displaying static non-interactive visual assets' },
-        { label: 'C', text: 'Executing legacy unstructured procedural loops' },
-        { label: 'D', text: 'Formatting auxiliary configuration headers' },
-      ],
-      correct_option: 'A',
-      explanation: `Core architectural abstraction coordinates foundational system resources and execution pipelines in ${subject}.`,
-    },
-    {
-      id: 2,
-      question: `Which fundamental principle guarantees operational consistency and reliability in ${subject}?`,
-      options: [
-        { label: 'A', text: 'Unbounded asynchronous side-effects' },
-        { label: 'B', text: 'Strict modular encapsulation and verifiable state transitions' },
-        { label: 'C', text: 'Linear polling without error recovery' },
-        { label: 'D', text: 'Deprecating distributed transaction boundaries' },
-      ],
-      correct_option: 'B',
-      explanation: 'Modular encapsulation and deterministic state transitions ensure predictable and verifiable runtime execution.',
-    },
-    {
-      id: 3,
-      question: `When optimizing algorithmic performance in ${subject}, what is the primary objective?`,
-      options: [
-        { label: 'A', text: 'Minimizing asymptotic time and space complexity' },
-        { label: 'B', text: 'Maximizing redundant memory buffer allocations' },
-        { label: 'C', text: 'Increasing arbitrary thread preemption cycles' },
-        { label: 'D', text: 'Eliminating all indexing data structures' },
-      ],
-      correct_option: 'A',
-      explanation: 'Algorithmic efficiency is measured by reducing asymptotic computational complexity (Big-O) in time and memory.',
-    },
-    {
-      id: 4,
-      question: `In modern engineering practice for ${subject}, how is fault tolerance best achieved?`,
-      options: [
-        { label: 'A', text: 'Single points of failure with no replication' },
-        { label: 'B', text: 'Redundancy, graceful degradation, and structured exception handling' },
-        { label: 'C', text: 'Ignoring downstream network timeouts' },
-        { label: 'D', text: 'Hardcoding static credentials across components' },
-      ],
-      correct_option: 'B',
-      explanation: 'Fault tolerance relies on defensive error boundaries, replication, and graceful service degradation under load.',
-    },
-    {
-      id: 5,
-      question: `What represents the standard verification lifecycle in ${subject}?`,
-      options: [
-        { label: 'A', text: 'Unit validation, integration testing, and formal benchmarking' },
-        { label: 'B', text: 'Manual ad-hoc testing exclusively in production' },
-        { label: 'C', text: 'Bypassing regression checks for major releases' },
-        { label: 'D', text: 'Disabling automated continuous integration pipelines' },
-      ],
-      correct_option: 'A',
-      explanation: 'Formal verification combines comprehensive unit suites, integration testing, and performance profiling.',
-    },
-  ].slice(0, Math.max(numQuestions, 3));
-
   if (!apiKey || apiKey.startsWith('dummy')) {
-    return generateFallback();
+    throw new Error('GEMINI_API_KEY is not configured. Cannot generate quiz questions.');
   }
 
   const contextPayload =
@@ -273,52 +199,48 @@ Return a JSON array of objects. Each object must have:
 Reference Course Material:
 ${contextPayload.substring(0, 8000)}`;
 
-  try {
-    const model = genAI.getGenerativeModel({
-      model: modelName,
-      generationConfig: {
-        temperature: 0.2,
-        responseMimeType: 'application/json',
-      },
-    });
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      temperature: 0.2,
+      responseMimeType: 'application/json',
+    },
+  });
 
-    const result = await Promise.race([
-      callWithRetry(() => model.generateContent(prompt)),
-      new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error('Gemini quiz generation timed out')), 12000)
-      ),
-    ]);
+  const result = await Promise.race([
+    callWithRetry(() => model.generateContent(prompt)),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error('Gemini quiz generation timed out after 12s')), 12000)
+    ),
+  ]);
 
-    const text = result.response.text();
-    const parsed = JSON.parse(text);
-    const questions = Array.isArray(parsed) ? parsed : parsed.questions;
+  const text = result.response.text();
+  const parsed = JSON.parse(text);
+  const questions = Array.isArray(parsed) ? parsed : parsed.questions;
 
-    if (Array.isArray(questions) && questions.length > 0) {
-      return questions.map((q: any, idx: number) => ({
-        id: idx + 1,
-        question: q.question || `Question ${idx + 1} on ${subject}`,
-        options: Array.isArray(q.options) && q.options.length === 4
-          ? q.options.map((opt: any, optIdx: number) => ({
-              label: opt.label || ['A', 'B', 'C', 'D'][optIdx],
-              text: typeof opt === 'string' ? opt : opt.text || `Option ${['A', 'B', 'C', 'D'][optIdx]}`,
-            }))
-          : [
-              { label: 'A', text: 'Option A' },
-              { label: 'B', text: 'Option B' },
-              { label: 'C', text: 'Option C' },
-              { label: 'D', text: 'Option D' },
-            ],
-        correct_option: ['A', 'B', 'C', 'D'].includes(q.correct_option?.toUpperCase())
-          ? q.correct_option.toUpperCase()
-          : 'A',
-        explanation: q.explanation || `Correct answer for question ${idx + 1}.`,
-      }));
-    }
-  } catch (err: any) {
-    console.error(`Gemini Quiz Generation failed (${modelName}):`, err.message || err);
+  if (!Array.isArray(questions) || questions.length === 0) {
+    throw new Error('Gemini returned no quiz questions. Please try again.');
   }
 
-  return generateFallback();
+  return questions.map((q: any, idx: number) => ({
+    id: idx + 1,
+    question: q.question || `Question ${idx + 1} on ${subject}`,
+    options: Array.isArray(q.options) && q.options.length === 4
+      ? q.options.map((opt: any, optIdx: number) => ({
+          label: opt.label || ['A', 'B', 'C', 'D'][optIdx],
+          text: typeof opt === 'string' ? opt : opt.text || `Option ${['A', 'B', 'C', 'D'][optIdx]}`,
+        }))
+      : [
+          { label: 'A', text: 'Option A' },
+          { label: 'B', text: 'Option B' },
+          { label: 'C', text: 'Option C' },
+          { label: 'D', text: 'Option D' },
+        ],
+    correct_option: ['A', 'B', 'C', 'D'].includes(q.correct_option?.toUpperCase())
+      ? q.correct_option.toUpperCase()
+      : 'A',
+    explanation: q.explanation || `Correct answer for question ${idx + 1}.`,
+  }));
 }
 
 export const generateQuizStructured = generateQuizQuestions;

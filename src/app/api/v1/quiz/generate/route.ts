@@ -47,7 +47,7 @@ export async function POST(req: NextRequest) {
 
     // Mandatory stream/semester/section segregation (always applied)
     if (studentStream && studentStream !== 'All') {
-      sql += ` AND (stream = $${pIdx} OR stream = 'General' OR stream IS NULL)`;
+      sql += ` AND (LOWER(stream) = LOWER($${pIdx}) OR stream = 'General' OR stream IS NULL)`;
       params.push(studentStream);
       pIdx++;
     }
@@ -57,7 +57,7 @@ export async function POST(req: NextRequest) {
       pIdx++;
     }
     if (studentSection && studentSection !== 'All') {
-      sql += ` AND (section = $${pIdx} OR section = 'General' OR section IS NULL)`;
+      sql += ` AND (LOWER(section) = LOWER($${pIdx}) OR section = 'General' OR section IS NULL)`;
       params.push(studentSection);
       pIdx++;
     }

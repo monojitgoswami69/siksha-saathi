@@ -29,8 +29,7 @@ export async function getEmbedding(text: string, useCache = true): Promise<numbe
   }
 
   if (!apiKey || apiKey.startsWith('dummy')) {
-    const mock = new Array(embeddingDim).fill(0).map((_, i) => Math.sin(i + text.length));
-    return mock;
+    throw new Error('GEMINI_API_KEY is not configured. Cannot generate embeddings.');
   }
 
   try {
@@ -82,9 +81,7 @@ export async function getBatchEmbeddings(texts: string[]): Promise<number[][]> {
   const embeddingDim = parseInt(process.env.GEMINI_EMBEDDING_DIM || '768', 10);
 
   if (!apiKey || apiKey.startsWith('dummy')) {
-    return texts.map((t) =>
-      new Array(embeddingDim).fill(0).map((_, i) => Math.sin(i + t.length))
-    );
+    throw new Error('GEMINI_API_KEY is not configured. Cannot generate batch embeddings.');
   }
 
   const BATCH_SIZE = 10;

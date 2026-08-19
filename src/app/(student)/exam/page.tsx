@@ -22,48 +22,14 @@ export default function ExamPreparationPage() {
   const [stats, setStats] = useState<any>(null);
   const [loadingStats, setLoadingStats] = useState(true);
 
-  const fallbackHistory = [
-    {
-      quiz_id: 'fallback-1',
-      subject: 'Database Management',
-      score: 7,
-      total_questions: 10,
-      percentage: 82,
-      submitted_at: new Date(Date.now() - 10 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      quiz_id: 'fallback-2',
-      subject: 'Data Structures',
-      score: 8,
-      total_questions: 10,
-      percentage: 70,
-      submitted_at: new Date(Date.now() - 24 * 60 * 60 * 1000).toISOString(),
-    },
-    {
-      quiz_id: 'fallback-3',
-      subject: 'Operating Systems',
-      score: 10,
-      total_questions: 10,
-      percentage: 100,
-      submitted_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString(),
-    },
-  ];
-
   const displayedHistory = (() => {
     const history = stats?.quiz_history || [];
-    const sortedHistory = [...history].sort(
-      (a: any, b: any) =>
-        new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
-    );
-
-    const existingSubjects = new Set(
-      sortedHistory.map((item: any) => item.subject?.toLowerCase())
-    );
-    const filler = fallbackHistory.filter(
-      (item) => !existingSubjects.has(item.subject.toLowerCase())
-    );
-
-    return [...sortedHistory, ...filler].slice(0, 8);
+    return [...history]
+      .sort(
+        (a: any, b: any) =>
+          new Date(b.submitted_at).getTime() - new Date(a.submitted_at).getTime()
+      )
+      .slice(0, 8);
   })();
 
   const loadData = async () => {
