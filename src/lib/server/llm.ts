@@ -177,7 +177,7 @@ export interface QuizQuestionOutput {
 }
 
 /**
- * Generate structured MCQs from course materials with retry resilience
+ * Generate structured MCQs from course materials with retry resilience and fallback
  */
 export async function generateQuizQuestions({
   subject,
@@ -190,68 +190,135 @@ export async function generateQuizQuestions({
   contextChunks?: string[];
   contextText?: string;
 }): Promise<QuizQuestionOutput[]> {
-  const modelName = process.env.GEMINI_MODEL || 'gemini-3.1-flash-lite';
+  const modelName = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-  if (!apiKey || apiKey.startsWith('dummy')) {
-    return Array.from({ length: numQuestions }, (_, i) => ({
-      id: i + 1,
-      question: `Practice Question #${i + 1} on ${subject}: Which concept applies here?`,
+  const generateFallback = (): QuizQuestionOutput[] => [
+    {
+      id: 1,
+      question: `In the study of ${subject}, what is the primary role of core architectural abstraction?`,
       options: [
-        { label: 'A', text: `Primary characteristic of ${subject}` },
-        { label: 'B', text: 'Secondary alternative implementation' },
-        { label: 'C', text: 'Deprecated historical approach' },
-        { label: 'D', text: 'Irrelevant external protocol' },
+        { label: 'A', text: `Managing underlying system resources and operational throughput for ${subject}` },
+        { label: 'B', text: 'Displaying static non-interactive visual assets' },
+        { label: 'C', text: 'Executing legacy unstructured procedural loops' },
+        { label: 'D', text: 'Formatting auxiliary configuration headers' },
       ],
       correct_option: 'A',
-      explanation: `Option A is correct according to the standard syllabus for ${subject}.`,
-    }));
+      explanation: `Core architectural abstraction coordinates foundational system resources and execution pipelines in ${subject}.`,
+    },
+    {
+      id: 2,
+      question: `Which fundamental principle guarantees operational consistency and reliability in ${subject}?`,
+      options: [
+        { label: 'A', text: 'Unbounded asynchronous side-effects' },
+        { label: 'B', text: 'Strict modular encapsulation and verifiable state transitions' },
+        { label: 'C', text: 'Linear polling without error recovery' },
+        { label: 'D', text: 'Deprecating distributed transaction boundaries' },
+      ],
+      correct_option: 'B',
+      explanation: 'Modular encapsulation and deterministic state transitions ensure predictable and verifiable runtime execution.',
+    },
+    {
+      id: 3,
+      question: `When optimizing algorithmic performance in ${subject}, what is the primary objective?`,
+      options: [
+        { label: 'A', text: 'Minimizing asymptotic time and space complexity' },
+        { label: 'B', text: 'Maximizing redundant memory buffer allocations' },
+        { label: 'C', text: 'Increasing arbitrary thread preemption cycles' },
+        { label: 'D', text: 'Eliminating all indexing data structures' },
+      ],
+      correct_option: 'A',
+      explanation: 'Algorithmic efficiency is measured by reducing asymptotic computational complexity (Big-O) in time and memory.',
+    },
+    {
+      id: 4,
+      question: `In modern engineering practice for ${subject}, how is fault tolerance best achieved?`,
+      options: [
+        { label: 'A', text: 'Single points of failure with no replication' },
+        { label: 'B', text: 'Redundancy, graceful degradation, and structured exception handling' },
+        { label: 'C', text: 'Ignoring downstream network timeouts' },
+        { label: 'D', text: 'Hardcoding static credentials across components' },
+      ],
+      correct_option: 'B',
+      explanation: 'Fault tolerance relies on defensive error boundaries, replication, and graceful service degradation under load.',
+    },
+    {
+      id: 5,
+      question: `What represents the standard verification lifecycle in ${subject}?`,
+      options: [
+        { label: 'A', text: 'Unit validation, integration testing, and formal benchmarking' },
+        { label: 'B', text: 'Manual ad-hoc testing exclusively in production' },
+        { label: 'C', text: 'Bypassing regression checks for major releases' },
+        { label: 'D', text: 'Disabling automated continuous integration pipelines' },
+      ],
+      correct_option: 'A',
+      explanation: 'Formal verification combines comprehensive unit suites, integration testing, and performance profiling.',
+    },
+  ].slice(0, Math.max(numQuestions, 3));
+
+  if (!apiKey || apiKey.startsWith('dummy')) {
+    return generateFallback();
   }
 
   const contextPayload =
     contextText || (contextChunks ? contextChunks.join('\n\n--- Chunk ---\n\n') : subject);
-  const prompt = `Generate exactly ${numQuestions} challenging multiple-choice questions for college students studying "${subject}".
-Each question MUST have 4 options (A, B, C, D), exactly one correct option, and a clear academic explanation.
 
-Use the following course materials as context:
-${contextPayload}`;
+  const prompt = `Generate exactly ${numQuestions} multiple-choice questions for college students studying "${subject}".
+Return a JSON array of objects. Each object must have:
+- "id": integer (1, 2, 3...)
+- "question": string (clear question text)
+- "options": array of 4 objects [{ "label": "A", "text": "..." }, { "label": "B", "text": "..." }, { "label": "C", "text": "..." }, { "label": "D", "text": "..." }]
+- "correct_option": string ("A", "B", "C", or "D")
+- "explanation": string (brief academic rationale)
 
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      temperature: 0.2,
-      responseMimeType: 'application/json',
-      responseSchema: {
-        type: SchemaType.ARRAY,
-        items: {
-          type: SchemaType.OBJECT,
-          properties: {
-            id: { type: SchemaType.INTEGER },
-            question: { type: SchemaType.STRING },
-            options: {
-              type: SchemaType.ARRAY,
-              items: {
-                type: SchemaType.OBJECT,
-                properties: {
-                  label: { type: SchemaType.STRING },
-                  text: { type: SchemaType.STRING },
-                },
-                required: ['label', 'text'],
-              },
-            },
-            correct_option: { type: SchemaType.STRING },
-            explanation: { type: SchemaType.STRING },
-          },
-          required: ['id', 'question', 'options', 'correct_option', 'explanation'],
-        },
+Reference Course Material:
+${contextPayload.substring(0, 8000)}`;
+
+  try {
+    const model = genAI.getGenerativeModel({
+      model: modelName,
+      generationConfig: {
+        temperature: 0.2,
+        responseMimeType: 'application/json',
       },
-    },
-  });
+    });
 
-  return callWithRetry(async () => {
-    const result = await model.generateContent(prompt);
+    const result = await Promise.race([
+      callWithRetry(() => model.generateContent(prompt)),
+      new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error('Gemini quiz generation timed out')), 12000)
+      ),
+    ]);
+
     const text = result.response.text();
-    return JSON.parse(text);
-  });
+    const parsed = JSON.parse(text);
+    const questions = Array.isArray(parsed) ? parsed : parsed.questions;
+
+    if (Array.isArray(questions) && questions.length > 0) {
+      return questions.map((q: any, idx: number) => ({
+        id: idx + 1,
+        question: q.question || `Question ${idx + 1} on ${subject}`,
+        options: Array.isArray(q.options) && q.options.length === 4
+          ? q.options.map((opt: any, optIdx: number) => ({
+              label: opt.label || ['A', 'B', 'C', 'D'][optIdx],
+              text: typeof opt === 'string' ? opt : opt.text || `Option ${['A', 'B', 'C', 'D'][optIdx]}`,
+            }))
+          : [
+              { label: 'A', text: 'Option A' },
+              { label: 'B', text: 'Option B' },
+              { label: 'C', text: 'Option C' },
+              { label: 'D', text: 'Option D' },
+            ],
+        correct_option: ['A', 'B', 'C', 'D'].includes(q.correct_option?.toUpperCase())
+          ? q.correct_option.toUpperCase()
+          : 'A',
+        explanation: q.explanation || `Correct answer for question ${idx + 1}.`,
+      }));
+    }
+  } catch (err: any) {
+    console.error(`Gemini Quiz Generation failed (${modelName}):`, err.message || err);
+  }
+
+  return generateFallback();
 }
 
 export const generateQuizStructured = generateQuizQuestions;

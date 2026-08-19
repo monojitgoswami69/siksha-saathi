@@ -102,13 +102,24 @@ export async function POST(req: NextRequest) {
       contextText = `Course syllabus and overview for ${subject}. Key concepts, architectures, definitions, and operational principles.`;
     }
 
-    const quiz = await generateQuizStructured({
+    const quizQuestions = await generateQuizStructured({
       subject,
       contextText,
       numQuestions: Math.min(Math.max(num_questions, 3), 20),
     });
 
-    return NextResponse.json(quiz);
+    const questionsList = Array.isArray(quizQuestions)
+      ? quizQuestions
+      : (quizQuestions as any)?.questions || [];
+
+    const quizResponse = {
+      quiz_id: `quiz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      subject: subject || 'General',
+      num_questions: questionsList.length,
+      questions: questionsList,
+    };
+
+    return NextResponse.json(quizResponse);
   } catch (err: any) {
     console.error('Quiz generation error:', err);
     return NextResponse.json({ detail: err.message || 'Failed to generate quiz' }, { status: 500 });

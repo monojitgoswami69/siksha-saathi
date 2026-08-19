@@ -119,29 +119,39 @@ export async function verifyGoogleIdToken(idToken: string): Promise<{
  */
 export async function getAuthUser(req: NextRequest): Promise<TokenPayload | null> {
   const path = req.nextUrl?.pathname || '';
-  const isAdminRoute = path.includes('/admin') || path.includes('/dashboard');
+  const searchScope = req.nextUrl?.searchParams?.get('scope');
+  const isAdminRoute = searchScope === 'admin' || searchScope === 'dashboard' || path.includes('/admin') || path.includes('/dashboard');
+  const isStudentExplicit = searchScope === 'student';
 
-  // 1. Check cookies in priority order based on route context
-  if (isAdminRoute) {
+  // 1. If explicitly requesting student scope, only check student cookie
+  if (isStudentExplicit) {
+    const studentToken = req.cookies.get(STUDENT_COOKIE_NAME)?.value;
+    if (studentToken) {
+      const user = await verifyAccessToken(studentToken);
+      if (user && user.scope !== 'dashboard') return user;
+    }
+  } else if (isAdminRoute) {
+    // 2. Admin routes or explicitly admin scope: check admin cookie
     const adminToken = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
     if (adminToken) {
       const user = await verifyAccessToken(adminToken);
-      if (user) return user;
+      if (user && user.scope === 'dashboard') return user;
     }
-    // Fall back to student cookie on admin routes (rare, but shared endpoints)
-    const studentToken = req.cookies.get(STUDENT_COOKIE_NAME)?.value;
-    if (studentToken) {
-      const user = await verifyAccessToken(studentToken);
-      if (user) return user;
+    // Fall back to student cookie on admin routes only if not explicitly admin/dashboard scope
+    if (!searchScope) {
+      const studentToken = req.cookies.get(STUDENT_COOKIE_NAME)?.value;
+      if (studentToken) {
+        const user = await verifyAccessToken(studentToken);
+        if (user) return user;
+      }
     }
   } else {
-    // Student routes: check student cookie first
+    // 3. Student routes: check student cookie first, then fallback to admin
     const studentToken = req.cookies.get(STUDENT_COOKIE_NAME)?.value;
     if (studentToken) {
       const user = await verifyAccessToken(studentToken);
       if (user) return user;
     }
-    // Fall back to admin cookie for shared endpoints (documents, filters, curriculum)
     const adminToken = req.cookies.get(ADMIN_COOKIE_NAME)?.value;
     if (adminToken) {
       const user = await verifyAccessToken(adminToken);
@@ -149,7 +159,7 @@ export async function getAuthUser(req: NextRequest): Promise<TokenPayload | null
     }
   }
 
-  // 2. Fallback to Authorization Bearer header
+  // 4. Fallback to Authorization Bearer header
   const authHeader = req.headers.get('authorization') || req.headers.get('Authorization');
   if (authHeader && authHeader.startsWith('Bearer ')) {
     const token = authHeader.split(' ')[1];

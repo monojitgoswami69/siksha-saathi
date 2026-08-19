@@ -84,7 +84,7 @@ export const api = {
         ),
       }),
     getMe: (scope: 'student' | 'admin' = 'student') =>
-      request('/auth/me', { method: 'GET' }, scope),
+      request(`/auth/me?scope=${scope}`, { method: 'GET' }, scope),
     updateProfile: (data: any, scope: 'student' | 'admin' = 'student') =>
       request('/auth/profile', { method: 'PUT', body: JSON.stringify(data) }, scope),
     logout: (scope?: 'student' | 'admin') => {

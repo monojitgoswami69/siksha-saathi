@@ -22,73 +22,88 @@ export default function QuizTakingPage() {
 
   // Initial load
   useEffect(() => {
+    const fallbackQuiz: QuizResponse = {
+      quiz_id: 'sample-academic-quiz',
+      subject: 'Computer Science Fundamentals',
+      num_questions: 3,
+      questions: [
+        {
+          id: 1,
+          question: 'What is the primary function of an operating system kernel?',
+          options: [
+            { label: 'A', text: 'Managing hardware resources and core system execution' },
+            { label: 'B', text: 'Displaying web browser graphics' },
+            { label: 'C', text: 'Executing high-level spreadsheet calculations' },
+            { label: 'D', text: 'Formatting plain text files' },
+          ],
+          correct_option: 'A',
+          explanation:
+            'The kernel is the foundational core of an operating system, managing CPU scheduling, memory allocation, and peripheral I/O.',
+        },
+        {
+          id: 2,
+          question: 'Which algorithmic complexity denotes logarithmic time growth?',
+          options: [
+            { label: 'A', text: 'O(n)' },
+            { label: 'B', text: 'O(log n)' },
+            { label: 'C', text: 'O(n²)' },
+            { label: 'D', text: 'O(1)' },
+          ],
+          correct_option: 'B',
+          explanation:
+            'O(log n) represents logarithmic time complexity, characteristic of binary search operations.',
+        },
+        {
+          id: 3,
+          question: 'In relational database theory, what does ACID stand for?',
+          options: [
+            { label: 'A', text: 'Atomicity, Consistency, Isolation, Durability' },
+            { label: 'B', text: 'Automatic, Concurrent, Isolated, Dynamic' },
+            { label: 'C', text: 'Array, Cursor, Index, Database' },
+            { label: 'D', text: 'Allocation, Cache, Interface, Driver' },
+          ],
+          correct_option: 'A',
+          explanation:
+            'ACID properties guarantee that database transactions are processed reliably.',
+        },
+      ],
+    };
+
     const stored = sessionStorage.getItem('currentQuiz');
     if (!stored) {
-      // Fallback sample quiz
-      const fallbackQuiz: QuizResponse = {
-        quiz_id: 'mock-123',
-        subject: 'Sample Academic Quiz',
-        num_questions: 3,
-        questions: [
-          {
-            id: 1,
-            question: 'What is the primary function of an operating system kernel?',
-            options: [
-              { label: 'A', text: 'Managing hardware resources and core system execution' },
-              { label: 'B', text: 'Displaying web browser graphics' },
-              { label: 'C', text: 'Executing high-level spreadsheet calculations' },
-              { label: 'D', text: 'Formatting plain text files' },
-            ],
-            correct_option: 'A',
-            explanation:
-              'The kernel is the foundational core of an operating system, managing CPU scheduling, memory allocation, and peripheral I/O.',
-          },
-          {
-            id: 2,
-            question: 'Which algorithmic complexity denotes logarithmic time growth?',
-            options: [
-              { label: 'A', text: 'O(n)' },
-              { label: 'B', text: 'O(log n)' },
-              { label: 'C', text: 'O(n²)' },
-              { label: 'D', text: 'O(1)' },
-            ],
-            correct_option: 'B',
-            explanation:
-              'O(log n) represents logarithmic time complexity, characteristic of binary search operations.',
-          },
-          {
-            id: 3,
-            question: 'In relational database theory, what does ACID stand for?',
-            options: [
-              { label: 'A', text: 'Atomicity, Consistency, Isolation, Durability' },
-              { label: 'B', text: 'Automatic, Concurrent, Isolated, Dynamic' },
-              { label: 'C', text: 'Array, Cursor, Index, Database' },
-              { label: 'D', text: 'Allocation, Cache, Interface, Driver' },
-            ],
-            correct_option: 'A',
-            explanation:
-              'ACID properties guarantee that database transactions are processed reliably.',
-          },
-        ],
-      };
-
       setQuizData(fallbackQuiz);
       setTimeRemaining(900);
       return;
     }
 
     try {
-      const parsed = JSON.parse(stored) as QuizResponse;
+      const parsed = JSON.parse(stored);
+      const questionsList: QuizQuestion[] = Array.isArray(parsed)
+        ? parsed
+        : Array.isArray(parsed?.questions)
+        ? parsed.questions
+        : [];
+
+      if (questionsList.length === 0) {
+        setQuizData(fallbackQuiz);
+        setTimeRemaining(900);
+        return;
+      }
+
       const normalized: QuizResponse = {
-        ...parsed,
-        questions: Array.isArray(parsed.questions) ? parsed.questions : [],
+        quiz_id: parsed.quiz_id || `quiz_${Date.now()}`,
+        subject: parsed.subject || 'Academic Assessment',
+        num_questions: questionsList.length,
+        questions: questionsList,
       };
-      setTimeRemaining(Math.max((normalized.questions.length || 5) * 60, 900));
+
+      setTimeRemaining(Math.max(questionsList.length * 60, 900));
       setQuizData(normalized);
     } catch {
-      router.push('/exam');
+      setQuizData(fallbackQuiz);
+      setTimeRemaining(900);
     }
-  }, [router]);
+  }, []);
 
   const score = quizData?.questions
     ? quizData.questions.filter((q) => selectedAnswers[q.id] === q.correct_option).length
@@ -104,13 +119,16 @@ export default function QuizTakingPage() {
           subject: quizData.subject,
           score,
           total_questions: totalQuestions,
+          answers: selectedAnswers,
+          questions: quizData.questions,
+          time_taken: timeTaken,
         });
       } catch (err) {
         console.error('Failed to submit quiz', err);
       }
     }
     setQuizState('result_screen');
-  }, [quizData, score, totalQuestions]);
+  }, [quizData, score, totalQuestions, selectedAnswers, timeTaken]);
 
   // Timer logic
   useEffect(() => {

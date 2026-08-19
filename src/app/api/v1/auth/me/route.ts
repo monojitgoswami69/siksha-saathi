@@ -1,12 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getAuthUser } from '@/lib/server/auth';
+import { getAuthUser, STUDENT_COOKIE_NAME, ADMIN_COOKIE_NAME } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
 
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
     if (!user) {
-      return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
+      return NextResponse.json({ authenticated: false, user: null }, { status: 200 });
     }
 
     if (user.scope === 'dashboard') {
@@ -14,7 +14,12 @@ export async function GET(req: NextRequest) {
         'SELECT id, email, role, display_name, stream, organization_name, department FROM dashboard_users WHERE id = $1;',
         [user.uid]
       );
-      if (dbRes.rowCount === 0) return NextResponse.json({ detail: 'User not found' }, { status: 404 });
+      if (dbRes.rowCount === 0) {
+        // Stale cookie: user was deleted or reseeded in DB. Clear cookie and return unauthenticated.
+        const res = NextResponse.json({ authenticated: false, user: null }, { status: 200 });
+        res.cookies.delete(ADMIN_COOKIE_NAME);
+        return res;
+      }
       const row = dbRes.rows[0];
       // Resolve allowed streams (hod_streams ∪ faculty_assignment streams)
       const { getAllowedStreams } = await import('@/lib/server/analyticsScope');
@@ -29,13 +34,19 @@ export async function GET(req: NextRequest) {
         organization_name: row.organization_name,
         department: row.department,
         scope: 'dashboard',
+        authenticated: true,
       });
     } else {
       const dbRes = await query(
         'SELECT id, email, display_name, name, roll, stream, sem, section, avatar_url FROM student_users WHERE id = $1;',
         [user.uid]
       );
-      if (dbRes.rowCount === 0) return NextResponse.json({ detail: 'User not found' }, { status: 404 });
+      if (dbRes.rowCount === 0) {
+        // Stale cookie: student was deleted or reseeded in DB. Clear cookie and return unauthenticated.
+        const res = NextResponse.json({ authenticated: false, user: null }, { status: 200 });
+        res.cookies.delete(STUDENT_COOKIE_NAME);
+        return res;
+      }
       const row = dbRes.rows[0];
       return NextResponse.json({
         uid: row.id,
@@ -49,9 +60,10 @@ export async function GET(req: NextRequest) {
         section: row.section,
         avatar_url: row.avatar_url,
         scope: 'student',
+        authenticated: true,
       });
     }
   } catch (err: any) {
-    return NextResponse.json({ detail: err.message }, { status: 500 });
+    return NextResponse.json({ authenticated: false, error: err.message }, { status: 200 });
   }
 }

@@ -87,7 +87,14 @@ async function seed() {
     );
 
     if (existingAdmin.rowCount > 0) {
-      console.log(`   ℹ️ Admin user already exists (ID: ${existingAdmin.rows[0].id}). Skipping.`);
+      console.log(`   ℹ️ Admin user already exists (ID: ${existingAdmin.rows[0].id}). Updating password...`);
+      const salt = await bcrypt.genSalt(10);
+      const passwordHash = await bcrypt.hash(adminPassword, salt);
+      await client.query(
+        'UPDATE dashboard_users SET password_hash = $1 WHERE email = $2;',
+        [passwordHash, adminEmail]
+      );
+      console.log(`   ✅ Admin password updated to match SEED_ADMIN_PASSWORD.`);
     } else {
       console.log('   🔒 Hashing admin password with bcrypt...');
       const salt = await bcrypt.genSalt(10);
