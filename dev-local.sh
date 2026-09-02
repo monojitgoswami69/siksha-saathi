@@ -78,6 +78,23 @@ cleanup() {
     kill -9 "${EMB_PID}" 2>/dev/null || true
   fi
 
+  # 3. Stop PostgreSQL container and Docker daemon if local database was used
+  if [ "${LOCAL_DOCKER_USED:-false}" = true ]; then
+    if command -v docker >/dev/null 2>&1; then
+      echo -e "${YELLOW}Stopping siksha-postgres container...${NC}"
+      docker stop siksha-postgres >/dev/null 2>&1 || true
+
+      echo -e "${YELLOW}Stopping Docker daemon (${OS_TYPE})...${NC}"
+      if [ "$OS_TYPE" = "mac" ]; then
+        osascript -e 'quit app "Docker"' >/dev/null 2>&1 || killall "Docker Desktop" >/dev/null 2>&1 || true
+      elif [ "$OS_TYPE" = "linux" ]; then
+        systemctl --user stop docker 2>/dev/null || sudo systemctl stop docker 2>/dev/null || true
+      elif [ "$OS_TYPE" = "windows" ]; then
+        taskkill //F //IM "Docker Desktop.exe" >/dev/null 2>&1 || true
+      fi
+    fi
+  fi
+
   wait 2>/dev/null || true
   echo -e "${GREEN}All services stopped cleanly.${NC}"
 }
@@ -109,8 +126,10 @@ case "${UNAME_OS}" in
 esac
 
 # ── 0. Check & Initialize PostgreSQL (Docker or Cloud) ───────────────────
+LOCAL_DOCKER_USED=false
 CURRENT_DB_URL=$(grep "^DATABASE_URL=" .env.local 2>/dev/null | head -n 1 | cut -d '=' -f2- | tr -d '"' | tr -d "'" || echo "")
 if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0.1"* ]]; then
+  LOCAL_DOCKER_USED=true
   echo -e "\n${YELLOW}[0/4] Checking Local PostgreSQL (Docker)...${NC}"
   if command -v docker >/dev/null 2>&1; then
     if ! docker info >/dev/null 2>&1; then
