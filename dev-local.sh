@@ -84,6 +84,60 @@ if [ ! -f ".env.local" ]; then
   fi
 fi
 
+# ── 0. Check & Initialize PostgreSQL (Docker or Cloud) ───────────────────
+CURRENT_DB_URL=$(grep "^DATABASE_URL=" .env.local 2>/dev/null | head -n 1 | cut -d '=' -f2- | tr -d '"' | tr -d "'" || echo "")
+if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0.1"* ]]; then
+  echo -e "\n${YELLOW}[0/4] Checking Local PostgreSQL (Docker)...${NC}"
+  if command -v docker >/dev/null 2>&1; then
+    if ! docker info >/dev/null 2>&1; then
+      echo -e "${CYAN}   Starting Docker Desktop...${NC}"
+      open -a Docker 2>/dev/null || true
+      echo -e "   Waiting for Docker daemon to initialize..."
+      DOCKER_RETRIES=20
+      until docker info >/dev/null 2>&1 || [ $DOCKER_RETRIES -eq 0 ]; do
+        sleep 2
+        DOCKER_RETRIES=$((DOCKER_RETRIES - 1))
+      done
+    fi
+
+    if docker info >/dev/null 2>&1; then
+      if ! docker ps --format '{{.Names}}' | grep -q "^siksha-postgres$"; then
+        if docker ps -a --format '{{.Names}}' | grep -q "^siksha-postgres$"; then
+          echo -e "${CYAN}   Starting existing siksha-postgres container...${NC}"
+          docker start siksha-postgres >/dev/null
+        else
+          echo -e "${CYAN}   Starting new siksha-postgres container via docker compose...${NC}"
+          docker compose up -d postgres >/dev/null
+        fi
+      else
+        echo -e "${GREEN}   ✅ siksha-postgres container is already running.${NC}"
+      fi
+
+      echo -e "      Waiting for PostgreSQL on port 5432 to be ready..."
+      RETRIES=15
+      until nc -z 127.0.0.1 5432 >/dev/null 2>&1 || [ $RETRIES -eq 0 ]; do
+        sleep 1
+        RETRIES=$((RETRIES - 1))
+      done
+
+      if [ $RETRIES -gt 0 ]; then
+        echo -e "${GREEN}   ✅ Local PostgreSQL is accepting connections on localhost:5432.${NC}"
+      else
+        echo -e "${RED}   ⚠️ Timed out waiting for PostgreSQL port 5432.${NC}"
+      fi
+    else
+      echo -e "${RED}❌ Docker daemon is not running!${NC}"
+      echo -e "   Please start Docker Desktop to use local PostgreSQL, or switch DATABASE_URL in .env.local to NeonDB."
+      exit 1
+    fi
+  else
+    echo -e "${RED}❌ Docker is not installed on this system.${NC}"
+    exit 1
+  fi
+else
+  echo -e "\n${CYAN}[0/4] Using Cloud Database:${NC} ${CURRENT_DB_URL%%@*}@... (NeonDB)"
+fi
+
 # Ensure Python virtual environment exists
 if [ ! -f "optimized-worker/.venv/bin/activate" ]; then
   echo -e "${CYAN}🔧 Creating Python virtual environment in optimized-worker/.venv...${NC}"
@@ -112,12 +166,13 @@ fi
 export LOCAL_EMBEDDING_URL="http://${EMBEDDING_HOST}:${EMBEDDING_PORT}"
 export LOCAL_EMBEDDING_DIM="384"
 export LOCAL_EMBEDDING_MODEL="intfloat/multilingual-e5-small"
+export RERANKER_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2"
 
 # Check if port is already bound
 if lsof -Pi :${EMBEDDING_PORT} -sTCP:LISTEN -t >/dev/null 2>&1; then
   ALREADY_RUNNING=$(curl -s "${LOCAL_EMBEDDING_URL}/health" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
   if [ "$ALREADY_RUNNING" = "ready" ]; then
-    echo -e "${GREEN}ℹ️  Embedding service already running & ready on ${LOCAL_EMBEDDING_URL}.${NC}"
+    echo -e "${GREEN}ℹ️  Embedding & Reranker service already running & ready on ${LOCAL_EMBEDDING_URL}.${NC}"
   else
     echo -e "${RED}❌ Port ${EMBEDDING_PORT} is in use by another process. Please free it first:${NC}"
     echo -e "   lsof -i :${EMBEDDING_PORT}"
@@ -125,9 +180,10 @@ if lsof -Pi :${EMBEDDING_PORT} -sTCP:LISTEN -t >/dev/null 2>&1; then
   fi
 else
   # ── 1. Start Embedding Service ──────────────────────────────────────────
-  echo -e "\n${YELLOW}[1/3] Starting Embedding Service on ${LOCAL_EMBEDDING_URL}...${NC}"
-  echo -e "      Model: intfloat/multilingual-e5-small (384-dim)"
-  echo -e "      Initializing model (takes ~6 seconds on M-series)..."
+  echo -e "\n${YELLOW}[1/4] Starting Embedding & Reranker Service on ${LOCAL_EMBEDDING_URL}...${NC}"
+  echo -e "      Embedding Model: intfloat/multilingual-e5-small (384-dim)"
+  echo -e "      Reranker Model:  cross-encoder/ms-marco-MiniLM-L-6-v2"
+  echo -e "      Initializing models (takes ~6-8 seconds on M-series)..."
 
   cd embedding-service
   uvicorn app.main:app \
@@ -162,25 +218,25 @@ fi
 
 # ── 2. Start Next.js App ────────────────────────────────────────────────
 if [ "$SKIP_NEXTJS" = false ]; then
-  echo -e "\n${YELLOW}[2/3] Starting Next.js Dev Server on http://localhost:3000...${NC}"
+  echo -e "\n${YELLOW}[2/4] Starting Next.js Dev Server on http://localhost:3000...${NC}"
   npm run dev &
   NEXT_PID=$!
   sleep 2
   echo -e "      ${GREEN}✅ Next.js started (PID: ${NEXT_PID})${NC}"
 else
-  echo -e "\n${CYAN}[2/3] Skipping Next.js (--skip-nextjs)${NC}"
+  echo -e "\n${CYAN}[2/4] Skipping Next.js (--skip-nextjs)${NC}"
 fi
 
 # ── 3. Start Ingestion Worker ───────────────────────────────────────────
 if [ "$SKIP_WORKER" = false ]; then
-  echo -e "\n${YELLOW}[3/3] Starting Python Ingestion Worker...${NC}"
+  echo -e "\n${YELLOW}[3/4] Starting Python Ingestion Worker...${NC}"
   cd "$SCRIPT_DIR/optimized-worker"
   python -m worker.main &
   WORKER_PID=$!
   cd "$SCRIPT_DIR"
   echo -e "      ${GREEN}✅ Ingestion Worker started (PID: ${WORKER_PID})${NC}"
 else
-  echo -e "\n${CYAN}[3/3] Skipping Ingestion Worker (--skip-worker)${NC}"
+  echo -e "\n${CYAN}[3/4] Skipping Ingestion Worker (--skip-worker)${NC}"
 fi
 
 # ── Ready Summary ───────────────────────────────────────────────────────

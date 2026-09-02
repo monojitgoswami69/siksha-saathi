@@ -255,6 +255,15 @@ async function initSchema() {
       ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS char_start INT;
       ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS char_end INT;
       ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS section VARCHAR(50);
+      ALTER TABLE document_chunks ADD COLUMN IF NOT EXISTS embedding_local vector(384);
+      DO $$
+      BEGIN
+        IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name='document_chunks' AND column_name='search_vector') THEN
+          ALTER TABLE document_chunks ADD COLUMN search_vector tsvector GENERATED ALWAYS AS (to_tsvector('simple', raw_content)) STORED;
+        END IF;
+      EXCEPTION WHEN OTHERS THEN
+        NULL;
+      END$$;
     `);
     console.log('   ✅ Table: document_chunks');
 
@@ -393,25 +402,27 @@ async function initSchema() {
 
     try {
       await client.query(`
-        CREATE INDEX IF NOT EXISTS idx_chunks_embedding ON document_chunks 
-        USING hnsw (embedding vector_cosine_ops);
+        CREATE INDEX IF NOT EXISTS idx_chunks_embedding_local ON document_chunks 
+        USING hnsw (embedding_local vector_cosine_ops);
       `);
-      console.log('   ✅ HNSW Vector Index: idx_chunks_embedding');
+      console.log('   ✅ HNSW Vector Index: idx_chunks_embedding_local (384-dim E5-small)');
     } catch (e) {
-      console.warn('   ⚠️ HNSW index creation note (requires pgvector):', e.message);
+      console.warn('   ⚠️ HNSW local index creation note:', e.message);
     }
 
     try {
-      // Use 'simple' config for language-agnostic (multilingual) tokenization
-      // so non-English content is also full-text searchable.
-      await client.query(`DROP INDEX IF EXISTS idx_chunks_fts;`);
       await client.query(`
-        CREATE INDEX idx_chunks_fts ON document_chunks
-        USING gin (to_tsvector('simple', raw_content));
+        CREATE INDEX IF NOT EXISTS idx_chunks_search_vector ON document_chunks
+        USING gin (search_vector);
       `);
-      console.log('   ✅ Full-Text GIN Search Index: idx_chunks_fts (simple/multilingual)');
+      console.log('   ✅ Full-Text GIN Search Index: idx_chunks_search_vector (stored tsvector)');
     } catch (e) {
-      console.warn('   ⚠️ GIN FTS index creation note:', e.message);
+      // Fallback
+      await client.query(`
+        CREATE INDEX IF NOT EXISTS idx_chunks_fts ON document_chunks
+        USING gin (to_tsvector('simple', raw_content));
+      `).catch(() => {});
+      console.log('   ✅ Full-Text GIN Search Index: idx_chunks_fts (dynamic tsvector)');
     }
 
     await client.query('COMMIT');

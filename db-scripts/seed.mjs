@@ -112,68 +112,105 @@ async function seed() {
       console.log(`      Name: ${insertRes.rows[0].display_name}`);
     }
 
-    // 2. Seed Default Curriculum Structure (if curriculum is empty)
-    console.log('\n📚 Checking default curriculum structure...');
-    const curricCheck = await client.query('SELECT COUNT(*) as total FROM curriculum;');
-    const curricCount = parseInt(curricCheck.rows[0]?.total || '0', 10);
+    // 2. Seed Default Curriculum Structure from departments_curriculum.json
+    console.log('\n📚 Loading and syncing departments curriculum from departments_curriculum.json...');
+    const curricJsonPath = path.join(rootDir, 'departments_curriculum.json');
+    let defaultCurriculum = [];
 
-    if (curricCount === 0) {
-      console.log('   📦 Seeding standard engineering curriculum semesters...');
-      const defaultCurriculum = [
-        {
-          stream: 'cse',
-          semester: '1',
-          subjects: ['Mathematics I', 'Physics', 'Basic Electrical Engineering', 'Programming in C'],
-        },
-        {
-          stream: 'cse',
-          semester: '2',
-          subjects: ['Mathematics II', 'Chemistry', 'Data Structures & Algorithms', 'Digital Logic Design'],
-        },
-        {
-          stream: 'cse',
-          semester: '3',
-          subjects: ['Object Oriented Programming (Java)', 'Discrete Mathematics', 'Computer Organization & Architecture'],
-        },
-        {
-          stream: 'cse',
-          semester: '4',
-          subjects: ['Operating Systems', 'Database Management Systems', 'Design & Analysis of Algorithms', 'Formal Language & Automata Theory'],
-        },
-        {
-          stream: 'cse',
-          semester: '5',
-          subjects: ['Computer Networks', 'Software Engineering', 'Compiler Design', 'Artificial Intelligence'],
-        },
-        {
-          stream: 'cse',
-          semester: '6',
-          subjects: ['Machine Learning', 'Cloud Computing', 'Information Security', 'Web Technologies'],
-        },
-        {
-          stream: 'it',
-          semester: '1',
-          subjects: ['Mathematics I', 'Physics', 'Programming in C', 'Basic Electronics'],
-        },
-        {
-          stream: 'ece',
-          semester: '1',
-          subjects: ['Mathematics I', 'Physics', 'Basic Electrical Engineering', 'Engineering Mechanics'],
-        },
-      ];
+    if (fs.existsSync(curricJsonPath)) {
+      const rawData = JSON.parse(fs.readFileSync(curricJsonPath, 'utf8'));
+      const groupABranches = new Set(['CSE', 'IT', 'ECE', 'EE']);
 
-      for (const item of defaultCurriculum) {
-        await client.query(
-          `INSERT INTO curriculum (stream, semester, subjects)
-           VALUES ($1, $2, $3)
-           ON CONFLICT (stream, semester) DO NOTHING;`,
-          [item.stream, item.semester, JSON.stringify(item.subjects)]
-        );
+      const sem12GroupA = {
+        1: [
+          'Mathematics-I (Calculus & Linear Algebra)',
+          'Physics-I',
+          'Basic Electrical Engineering',
+          'Engineering Graphics & Design',
+          'Physics-I Lab',
+          'Basic Electrical Engineering Lab',
+        ],
+        2: [
+          'Mathematics-II (Differential Equations & Complex Variables)',
+          'Chemistry-I',
+          'Programming for Problem Solving (C Programming)',
+          'English',
+          'Chemistry-I Lab',
+          'Programming for Problem Solving Lab',
+        ],
+      };
+
+      const sem12GroupB = {
+        1: [
+          'Mathematics-I (Calculus & Linear Algebra)',
+          'Chemistry-I',
+          'Programming for Problem Solving (C Programming)',
+          'English',
+          'Chemistry-I Lab',
+          'Programming for Problem Solving Lab',
+        ],
+        2: [
+          'Mathematics-II (Differential Equations & Complex Variables)',
+          'Physics-I',
+          'Basic Electrical Engineering',
+          'Engineering Graphics & Design',
+          'Physics-I Lab',
+          'Basic Electrical Engineering Lab',
+        ],
+      };
+
+      for (const [dept, info] of Object.entries(rawData.departments || {})) {
+        const stream = dept.toLowerCase();
+        const batches = Array.isArray(info.batches) ? info.batches : [];
+
+        // Semesters 1 and 2
+        const sem12 = groupABranches.has(dept) ? sem12GroupA : sem12GroupB;
+        defaultCurriculum.push({ stream, semester: '1', subjects: sem12[1], sections: batches });
+        defaultCurriculum.push({ stream, semester: '2', subjects: sem12[2], sections: batches });
+
+        // Semesters 3 through 8
+        for (const [semLabel, rawSubs] of Object.entries(info.curriculum || {})) {
+          const semNum = semLabel.replace(/[^0-9]/g, '');
+          if (!semNum) continue;
+
+          const subjects = [];
+          if (Array.isArray(rawSubs)) {
+            for (const item of rawSubs) {
+              if (typeof item === 'string') {
+                const clean = item.trim();
+                if (clean && !subjects.includes(clean)) subjects.push(clean);
+              } else if (typeof item === 'object' && item !== null) {
+                for (const groupSubs of Object.values(item)) {
+                  if (Array.isArray(groupSubs)) {
+                    for (const s of groupSubs) {
+                      if (typeof s === 'string') {
+                        const clean = s.trim();
+                        if (clean && !subjects.includes(clean)) subjects.push(clean);
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+
+          defaultCurriculum.push({ stream, semester: semNum, subjects, sections: batches });
+        }
       }
-      console.log(`   ✅ Seeded ${defaultCurriculum.length} curriculum semester entries.`);
-    } else {
-      console.log(`   ℹ️ Curriculum already contains ${curricCount} entries. Skipping curriculum seed.`);
     }
+
+    let seededCount = 0;
+    for (const item of defaultCurriculum) {
+      await client.query(
+        `INSERT INTO curriculum (stream, semester, subjects, sections, updated_at)
+         VALUES ($1, $2, $3, $4, NOW())
+         ON CONFLICT (stream, semester)
+         DO UPDATE SET subjects = EXCLUDED.subjects, sections = EXCLUDED.sections, updated_at = NOW();`,
+        [item.stream, item.semester, JSON.stringify(item.subjects), JSON.stringify(item.sections)]
+      );
+      seededCount++;
+    }
+    console.log(`   ✅ Synced ${seededCount} curriculum semester entries across ${Object.keys(defaultCurriculum).length ? '8' : '0'} departments.`);
 
     await client.query('COMMIT');
     console.log('\n🎉 Database seeding completed successfully!');

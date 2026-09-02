@@ -40,17 +40,34 @@ export function getDbPool(): Pool {
   return pool;
 }
 
-const neonSql = neon(process.env.DATABASE_URL || '');
+let _neonSql: ReturnType<typeof neon> | null = null;
+function getNeonSql() {
+  if (!_neonSql) {
+    _neonSql = neon(process.env.DATABASE_URL || '');
+  }
+  return _neonSql;
+}
 
 export async function query<T = any>(
   text: string,
   params?: any[]
 ): Promise<{ rows: T[]; rowCount: number | null }> {
+  const connectionString = process.env.DATABASE_URL || '';
+  const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+
   try {
-    const rows = await neonSql.query(text, params);
-    return { rows: rows as T[], rowCount: Array.isArray(rows) ? rows.length : 0 };
+    if (isLocal) {
+      const p = getDbPool();
+      const res = await p.query(text, params);
+      return { rows: res.rows as T[], rowCount: res.rowCount };
+    } else {
+      const nSql = getNeonSql();
+      const rows = await nSql.query(text, params);
+      return { rows: rows as T[], rowCount: Array.isArray(rows) ? rows.length : 0 };
+    }
   } catch (err: any) {
     console.error(`PostgreSQL Query Error [${text.slice(0, 80)}...]:`, err.message);
     throw err;
   }
 }
+

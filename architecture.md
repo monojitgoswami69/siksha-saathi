@@ -89,16 +89,18 @@ Process starts
 
 | Method | Path | Purpose |
 |---|---|---|
-| `GET` | `/health` | `{ "status": "starting" \| "ready" }` |
+| `GET` | `/health` | `{ "status": "starting" \| "ready", "model": ..., "reranker_model": ... }` |
 | `POST` | `/embed` | Single text → 384-dim vector (cached for queries) |
 | `POST` | `/embed/batch` | Batch texts → list of vectors (for ingestion) |
+| `POST` | `/rerank` | Query + candidate passages → Cross-Encoder relevance scores & ranking |
 | `GET` | `/metrics` | Cache hits/misses/size, uptime |
 
-**E5 conventions applied internally:**
-- Query text gets prefix: `"query: <text>"`
-- Document text gets prefix: `"passage: <text>"`
-- All embeddings are L2-normalized
-- Dimensionality: 384
+**Models Hosted in Service:**
+- **Embedding:** `intfloat/multilingual-e5-small` (384-dim, L2-normalized)
+  - Query prefix: `"query: <text>"`
+  - Passage prefix: `"passage: <text>"`
+- **Reranker:** `cross-encoder/ms-marco-MiniLM-L-6-v2` (~80MB, joint sequence classification)
+  - Evaluates cross-attention between original query and candidate chunks for precise relevance scoring.
 
 **Measured performance (Apple M5, 16GB):**
 
@@ -165,15 +167,36 @@ CREATE INDEX idx_chunks_embedding_local
   ON document_chunks USING hnsw (embedding_local vector_cosine_ops);
 ```
 
-### Retrieval Strategy
+### Retrieval Strategy — 4-Stage Hybrid RAG Pipeline
 
-**Hybrid search** using Reciprocal Rank Fusion (RRF):
+Siksha Saathi implements an advanced 4-stage Hybrid RAG retrieval pipeline:
 
-1. **Vector search:** `embedding_local <=> query_vector` (cosine distance via pgvector)
-2. **Full-text search:** `tsvector @@ plainto_tsquery` (PostgreSQL `simple` config — multilingual)
-3. **Fusion:** `1/(60+rank_vector) + 1/(60+rank_text)` — combines both signals
+```
+User Query
+   │
+   ├─► Stage 1: Vector Search (Top 25)
+   │     • pgvector cosine distance on embedding_local (384-dim E5-small)
+   │     • Scoped by stream, semester, section, and subject
+   │
+   ├─► Stage 2: Keyword / BM25 Search (Top 15)
+   │     • PostgreSQL tsvector @@ plainto_tsquery (simple multilingual)
+   │     • Scored via ts_rank_cd
+   │
+   ├─► Stage 3: Reciprocal Rank Fusion (RRF) & Deduplication
+   │     • RRF_score = 1/(60 + v_rank) + 1/(60 + t_rank)
+   │     • Merges vector + keyword candidates into ~25–35 unique chunks
+   │
+   └─► Stage 4: Cross-Encoder Reranker
+         • POST http://127.0.0.1:8100/rerank
+         • Model: cross-encoder/ms-marco-MiniLM-L-6-v2
+         • Joint cross-attention on (query, chunk_text)
+         • Top 10 highest-ranked chunks selected
+               │
+               ▼
+       Context to Gemini LLM (with [[#1]]..[[#10]] citation tracking)
+```
 
-All retrieval is **scope-filtered** (stream + semester + section + subject).
+All retrieval strictly enforces academic scoping filters (stream, semester, section, subject) so students never leak or access unauthorized materials.
 
 ### Key Tables
 

@@ -8,3 +8,5 @@ optimized-worker/worker/__pycache__/
 embedding-service/.venv
 embedding-service/.env
 embedding-service/app/__pycache__/
+*.tsbuildinfo
+.storage/
