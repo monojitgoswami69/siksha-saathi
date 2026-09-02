@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
-import { getEmbedding, formatVector } from '@/lib/server/embeddings';
+import { getQueryEmbedding, formatVector, getEmbeddingColumn } from '@/lib/server/embeddingRouter';
 import { streamSocraticChat } from '@/lib/server/llm';
 import { logStudentQuery } from '@/lib/server/audit';
 
@@ -34,8 +34,9 @@ export async function POST(req: NextRequest) {
     const topK = Math.min(Math.max(1, top_k), 10);
 
     // Parallel embedding generation & student profile lookup
+    const embCol = getEmbeddingColumn(); // 'embedding' (legacy) or 'embedding_local' (local)
     const [queryEmbedding, studentRes] = await Promise.all([
-      getEmbedding(message),
+      getQueryEmbedding(message),
       query('SELECT stream, sem, section FROM student_users WHERE id = $1;', [user.uid]).catch(
         () => ({ rowCount: 0, rows: [] })
       ),
@@ -57,7 +58,7 @@ export async function POST(req: NextRequest) {
 
     // ---- Build scope filter (applied to BOTH vector + text search + fallback) ----
     // document_id is AND-ed with scope (never bypasses it) to prevent scope escape.
-    let whereFilter = 'WHERE c.embedding IS NOT NULL';
+    let whereFilter = `WHERE c.${embCol} IS NOT NULL`;
     const params: any[] = [];
     let pIdx = 1;
 
@@ -109,8 +110,8 @@ export async function POST(req: NextRequest) {
       WITH vector_search AS (
         SELECT
           c.id,
-          ROW_NUMBER() OVER (ORDER BY c.embedding <=> $1) AS v_rank,
-          (1 - (c.embedding <=> $1)) AS v_sim
+          ROW_NUMBER() OVER (ORDER BY c.${embCol} <=> $1) AS v_rank,
+          (1 - (c.${embCol} <=> $1)) AS v_sim
         FROM document_chunks c
         ${scopeClauseForHybrid}
         LIMIT 25
@@ -156,10 +157,10 @@ export async function POST(req: NextRequest) {
           SELECT id, document_id, chunk_index, total_chunks, raw_content,
                  page_start, page_end, paragraph_id, chunk_type, char_start, char_end,
                  file_name, title, stream, semester, section, subject, module,
-                 1 - (embedding <=> $1) AS similarity
+                 1 - (c.${embCol} <=> $1) AS similarity
           FROM document_chunks c
           ${fallbackScope}
-          ORDER BY embedding <=> $1 LIMIT $${params.length + 2}::int;
+          ORDER BY c.${embCol} <=> $1 LIMIT $${params.length + 2}::int;
         `;
         const res = await query(fallbackSql, fallbackParams);
         searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD);

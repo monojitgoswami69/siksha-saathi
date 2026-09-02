@@ -7,7 +7,7 @@ import { invalidateFilterCache } from '@/app/api/v1/filters/route';
 
 /**
  * Enqueue an ingestion job. The heavy pipeline (extraction / OCR / embeddings)
- * runs in a separate long-running worker (see /ingestion-worker) which polls
+ * runs in a separate long-running worker (see /optimized-worker) which polls
  * the ingestion_jobs table. This route only authenticates, scopes, uploads the
  * original asset to storage, creates the document row (status=processing), and
  * enqueues a job — then returns 202 immediately (fast, serverless-safe).

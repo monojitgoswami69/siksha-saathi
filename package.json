@@ -20,9 +20,7 @@
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
-    "db:fresh": "node db-scripts/clear.mjs && drizzle-kit push && node db-scripts/seed.mjs",
-    "worker:dev": "cd ingestion-worker && npm run dev",
-    "worker:install": "cd ingestion-worker && npm install"
+    "db:fresh": "node db-scripts/clear.mjs && drizzle-kit push && node db-scripts/seed.mjs"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.1106.0",

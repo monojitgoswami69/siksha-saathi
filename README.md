@@ -1,6 +1,6 @@
 # Siksha Saathi
 
-AI-powered academic tutoring, institutional intelligence, and automated examination platform for higher education. Curriculum-aligned Socratic tutoring, hybrid vector+full-text retrieval, a separate long-running ingestion/OCR worker, study-material distribution with stream/semester/section/subject scoping, and role-based institutional analytics.
+AI-powered academic tutoring, institutional intelligence, and automated examination platform for higher education. Curriculum-aligned Socratic tutoring, hybrid vector+full-text retrieval, local embedding service, PyMuPDF-based ingestion, study-material distribution with stream/semester/section/subject scoping, and role-based institutional analytics.
 
 ---
 
@@ -15,8 +15,8 @@ AI-powered academic tutoring, institutional intelligence, and automated examinat
 - **No self-registration**: students are admin-enrolled (CSV) with all academic fields required; Google login only succeeds if the email is pre-enrolled. Students cannot self-edit stream/semester/section/roll.
 
 ### Faculty & Admin Dashboard
-- **Separate ingestion worker** (`/ingestion-worker`) deployed as a long-running service (e.g. Render) — text extraction, per-page OCR, and Gemini embeddings run without serverless timeouts. The web app only enqueues a DB job (`ingestion_jobs`) and returns `202`.
-- **Roles**: `admin` (full access), `hod` (their stream, incl. faculty performance), `faculty` (what they teach), `student`. `superuser`/`assistant` removed.
+- **Background ingestion worker** (`/optimized-worker`) — text extraction (PyMuPDF), per-page OCR, and local E5 embeddings run without serverless timeouts. The web app only enqueues a DB job and returns `202`.
+- **Roles**: `admin` (full access), `hod` (their stream, incl. faculty performance), `faculty` (what they teach), `student`.
 - **Manage Faculty** page: create/update HODs/faculty, assign stream+department+role, reset passwords, delete (guards against last-admin removal / self-delete).
 - **Faculty Performance**: HOD sees faculty in their stream — subjects/semesters/sections each teaches + per-subject query heatmaps.
 - **Analytics**: per-subject/per-material heatmaps built from `query_citations` (every cited material increments, not just the top chunk). Role-scoped — no cross-stream leakage.
@@ -26,17 +26,26 @@ AI-powered academic tutoring, institutional intelligence, and automated examinat
 
 ## Architecture & Tech Stack
 
+Siksha Saathi runs as a **three-process local stack**:
+
+| Process | Technology | Port | Role |
+|---|---|---|---|
+| **Web app** | Next.js 16 (App Router, Turbopack) | `:3000` | UI, API routes, query pipeline, Gemini streaming |
+| **Embedding service** | FastAPI + `intfloat/multilingual-e5-small` | `:8100` | Loads model ONCE, serves `/embed` and `/embed/batch` |
+| **Ingestion worker** | Python (PyMuPDF, pytesseract, httpx) | background | Job polling, extraction, OCR, chunking, embedding via service |
+
 | Layer | Technology |
 |---|---|
-| **Web app** | Next.js 16 (App Router, Turbopack) — deployed to Vercel (slim bundle; no heavy ingestion deps) |
-| **Ingestion worker** | Standalone Node/TS service (`/ingestion-worker`) — deployed to Render (long-running) |
 | **Database** | PostgreSQL (NeonDB) + `pgvector` (HNSW) + Drizzle ORM |
 | **Search** | Hybrid: pgvector cosine + `tsvector` (`simple`/multilingual) via RRF |
-| **LLM/Embeddings** | Google Gemini (multilingual) — `batchEmbedContents` for ingestion throughput |
-| **OCR** | Tesseract.js (singleton worker, multilingual `eng+hin` by default via `TESSERACT_LANGS`) |
-| **PDF** | pdfjs-dist (per-page text + render image-only pages to canvas for OCR) |
+| **LLM** | Google Gemini (streaming Socratic chat, quiz generation) |
+| **Embeddings** | `intfloat/multilingual-e5-small` (384-dim, local, ~6ms warm query) |
+| **PDF** | PyMuPDF (C library, ~10ms for 5MB PDF) |
+| **OCR** | pytesseract (eng+hin) |
 | **Storage** | Cloudflare R2 (S3) / Dropbox |
-| **Auth** | `httpOnly` cookies, Next.js Proxy, JWT (`jose`), `bcryptjs`, Google OAuth 2.0 |
+| **Auth** | `httpOnly` cookies, JWT (`jose`), `bcryptjs`, Google OAuth 2.0 |
+
+See [`architecture.md`](architecture.md) for detailed data flow diagrams and module breakdown.
 
 ---
 
@@ -57,23 +66,50 @@ Scoping is enforced server-side in every retrieval/analytics/listing route via `
 
 ```
 siksha-saathi/
-├── ingestion-worker/           # ⬅ Separate deployable ingestion service (Render)
-│   └── src/                    #   pipeline (pdfjs/ocr/officeparser), batchEmbedContents, job loop
-├── db-scripts/                 # init, seed, validate, clear, reset (idempotent source->file_name renames)
-├── src/
+├── src/                          # Next.js application
 │   ├── app/
-│   │   ├── (auth)/login        # Student login (no registration)
-│   │   ├── (student)/         # chat, resources, exam (with subject/file filters)
-│   │   ├── admin/(dashboard)/ # knowledge-base, add-document, add-text, students, faculty,
-│   │   │                       #   faculty-performance, analytics, manage-curriculum, user-settings
-│   │   └── api/v1/            # REST + SSE: query/stream, search, quiz, documents, filters,
-│   │                          #   analytics (overview/stream/subject/student/faculty), admin/users
-│   ├── components/            # student + admin UI (chat chips, FilePreview highlight, Sidebar)
-│   ├── context/              # StudentAuth, AdminAuth, Chat, Toast
-│   ├── db/schema.ts          # Drizzle schema (student_users.section, documents.file_name, etc.)
-│   └── lib/server/           # db, auth (+getDashboardProfile), analyticsScope, llm, storage, audit, embeddings
-├── architecture.md
-└── .env.example
+│   │   ├── (auth)/login          # Student login (no registration)
+│   │   ├── (student)/            # Chat, resources, exam (with subject/file filters)
+│   │   ├── admin/(dashboard)/    # Knowledge-base, add-document, students, faculty,
+│   │   │                         #   faculty-performance, analytics, manage-curriculum
+│   │   └── api/v1/               # REST + SSE routes
+│   ├── components/               # Student + admin UI components
+│   ├── context/                  # StudentAuth, AdminAuth, Chat, Toast
+│   ├── db/schema.ts              # Drizzle ORM schema
+│   └── lib/server/               # Server modules:
+│       ├── embeddingRouter.ts    #   → routes to local embedding service
+│       ├── localEmbeddings.ts    #   → HTTP client for localhost:8100
+│       ├── llm.ts                #   → Gemini streaming
+│       ├── analyticsScope.ts     #   → role-based scoping
+│       ├── auth.ts               #   → JWT, OAuth, sessions
+│       ├── db.ts                 #   → PostgreSQL pool
+│       ├── storage.ts            #   → R2 / Dropbox
+│       └── audit.ts              #   → action logging
+│
+├── embedding-service/            # FastAPI embedding microservice
+│   └── app/
+│       ├── main.py               # FastAPI app (lifespan model loading)
+│       ├── model.py              # SentenceTransformer singleton
+│       ├── cache.py              # LRU cache (2000 entries)
+│       ├── schemas.py            # Request/response models
+│       └── config.py             # Pydantic Settings
+│
+├── optimized-worker/             # Python ingestion worker
+│   └── worker/
+│       ├── main.py               # Job polling loop
+│       ├── pipeline.py           # PyMuPDF + OCR extraction
+│       ├── chunking.py           # Paragraph-aware splitting
+│       ├── embeddings.py         # HTTP client for embedding service
+│       ├── db.py                 # Async psycopg3 pool
+│       ├── storage.py            # R2/Dropbox download
+│       ├── ocr.py                # pytesseract wrapper
+│       └── config.py             # Pydantic Settings
+│
+├── db-scripts/                   # Database management scripts
+├── drizzle/                      # Drizzle ORM migrations
+├── scripts/                      # Utility scripts (Dropbox token)
+├── dev-local.sh                  # Start all 3 processes
+└── architecture.md               # Detailed architecture documentation
 ```
 
 ---
@@ -81,56 +117,93 @@ siksha-saathi/
 ## Database CLI
 
 ```bash
-npm run db:setup      # init (creates tables, indexes, idempotent source->file_name rename) + seed + validate
-npm run db:init       # apply schema (idempotent — safe on existing DBs)
-npm run db:seed       # seed admin (SEED_ADMIN_*) + curriculum
+npm run db:setup      # init + seed + validate (run once)
+npm run db:init       # apply schema (idempotent)
+npm run db:seed       # seed admin + curriculum
 npm run db:validate   # health check (tables, indexes, extensions)
 npm run db:clear      # truncate all
 npm run db:reset      # drop + recreate
-npm run db:generate   # sync drizzle migrations from schema.ts (if you use drizzle-kit)
+npm run db:generate   # sync drizzle migrations from schema.ts
 ```
 
 ---
 
 ## Getting Started
 
-### Web app
+### Prerequisites
+- Node.js 20+
+- Python 3.9+ with pip
+- PostgreSQL (NeonDB) with pgvector extension
+
+### 1. Web app
 ```bash
 npm install
-npm run db:setup          # sets DATABASE_URL, SEED_ADMIN_* in .env.local first
-npm run dev               # http://localhost:3000
+cp .env.example .env.local        # configure DATABASE_URL, GEMINI_API_KEY, etc.
+npm run db:setup                   # creates tables, seeds admin
 ```
+
+### 2. Python environment (embedding service + worker)
+```bash
+cd optimized-worker
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cd ../embedding-service
+pip install -r requirements.txt    # shares the same venv
+```
+
+### 3. Start everything
+```bash
+./dev-local.sh
+```
+
+This starts:
+1. **Embedding service** on `:8100` (waits for model to load)
+2. **Next.js** on `:3000`
+3. **Ingestion worker** (background)
+
 Admin login: `admin@sikshasaathi.in` / `admin123` (from `SEED_ADMIN_*` — **change before production**).
 
-### Ingestion worker (run locally or deploy to Render)
+### Start individually
 ```bash
-cd ingestion-worker
-cp .env.example .env      # DATABASE_URL (same as web), GEMINI_API_KEY, R2_*/DROPBOX_*, TESSERACT_LANGS
-npm install
-npm run dev               # polls ingestion_jobs, processes extraction/OCR/embeddings
-```
-Or from repo root: `npm run worker:install && npm run worker:dev`. See `ingestion-worker/README.md` for Render deployment.
+# Embedding service
+source optimized-worker/.venv/bin/activate
+cd embedding-service && uvicorn app.main:app --host 127.0.0.1 --port 8100
 
-> **The worker must be running** for uploaded documents to be indexed. The web app enqueues; the worker does the heavy work (no timeout pressure). Without it, documents stay `processing`.
+# Next.js (in a separate terminal)
+npm run dev
+
+# Ingestion worker (in a separate terminal)
+source optimized-worker/.venv/bin/activate
+python -m worker.main
+```
+
+> **The embedding service must be running** before Next.js or the worker can process queries/ingestion.
+> **The worker must be running** for uploaded documents to be indexed. Without it, documents stay `processing`.
 
 ---
 
 ## Environment
 
-Key variables (see `.env.example` / `ingestion-worker/.env.example`):
+Key variables (see `.env.example` / `embedding-service/.env.example`):
 
 ```env
 DATABASE_URL=postgresql://...
 GEMINI_API_KEY=...
-GEMINI_MODEL=gemini-3.1-flash-lite
-GEMINI_EMBEDDING_MODEL=gemini-embedding-001
-GEMINI_EMBEDDING_DIM=768
+GEMINI_MODEL=gemini-3.5-flash-lite
 JWT_SECRET=...
 SEED_ADMIN_EMAIL=admin@sikshasaathi.in
 SEED_ADMIN_PASSWORD=admin123
 # R2 / Dropbox / Google OAuth ...
 ```
-Students are **admin-enrolled only** — no `DEFAULT_STUDENT_*` academic env vars. The enroll CSV requires `email,name,roll,stream,sem,section`; the admin sets a batch initial password per import.
+
+Embedding service (in `embedding-service/.env`):
+```env
+EMBEDDING_MODEL=intfloat/multilingual-e5-small
+EMBEDDING_DIM=384
+EMBEDDING_PORT=8100
+EMBEDDING_CACHE_MAX_SIZE=2000
+```
 
 ---
 
@@ -145,10 +218,19 @@ Students are **admin-enrolled only** — no `DEFAULT_STUDENT_*` academic env var
 | `GET`  | `/api/v1/documents` | List materials (student/hod/faculty scoped) |
 | `POST` | `/api/v1/ingest` | Enqueue ingestion job (202) — worker processes async |
 | `GET`  | `/api/v1/documents/:id/chunks/:chunkId` | Single chunk + preview URL (for citation highlight, scope-checked) |
-| `GET`  | `/api/v1/filters` | streams, semesters, **sections**, subjects, scoped **files**, curriculum |
+| `GET`  | `/api/v1/filters` | streams, semesters, sections, subjects, scoped files, curriculum |
 | `GET`  | `/api/v1/analytics/overview` | Role-scoped totals, at-risk, weak domains, weekly |
 | `GET`  | `/api/v1/analytics/stream` | Per-subject + per-material heatmap (scoped) |
 | `GET`  | `/api/v1/analytics/faculty` | Faculty performance (HOD: their stream; admin: all; faculty: self) |
 | `POST` | `/api/v1/admin/users` | Create faculty/HOD/admin (admin only) |
 | `PATCH/DELETE` | `/api/v1/admin/users/:uid` | Update / delete faculty (guards: last admin, self-delete) |
 | `POST` | `/api/v1/admin/users/:uid/password` | Reset password |
+
+### Embedding Service API
+
+| Method | Endpoint | Description |
+|---|---|---|
+| `GET` | `localhost:8100/health` | Service readiness (`starting` / `ready`) |
+| `POST` | `localhost:8100/embed` | Single text → 384-dim vector (LRU cached) |
+| `POST` | `localhost:8100/embed/batch` | Batch texts → list of vectors |
+| `GET` | `localhost:8100/metrics` | Cache hits/misses/size, uptime |

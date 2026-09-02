@@ -1,3 +1,10 @@
 node_modules
 .next
 .env.local
+optimized-worker/.venv/
+optimized-worker/.env
+optimized-worker/__pycache__/
+optimized-worker/worker/__pycache__/
+embedding-service/.venv
+embedding-service/.env
+embedding-service/app/__pycache__/

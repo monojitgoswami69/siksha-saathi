@@ -1,1 +1,0 @@
-An operating system manages hardware resources and provides services to programs. A process is a running instance of a program. Context switching lets the CPU switch between processes. Virtual memory maps logical addresses to physical addresses using a page table.
