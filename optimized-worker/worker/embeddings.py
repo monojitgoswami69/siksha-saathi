@@ -16,7 +16,7 @@ import numpy as np
 
 logger = logging.getLogger(__name__)
 
-EMBEDDING_SERVICE_URL = os.environ.get("LOCAL_EMBEDDING_URL", "http://127.0.0.1:8100")
+EMBEDDING_SERVICE_URL = os.environ.get("LOCAL_EMBEDDING_URL") or os.environ.get("EMBEDDING_SERVICE_URL") or "http://127.0.0.1:8100"
 TIMEOUT_S = 30.0
 
 

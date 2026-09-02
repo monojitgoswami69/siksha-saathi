@@ -1,0 +1,13 @@
+node_modules
+.next
+.venv
+optimized-worker/.venv
+embedding-service/.venv
+__pycache__
+*.pyc
+.git
+.github
+.storage
+.env.local
+*.tsbuildinfo
+test-material

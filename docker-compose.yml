@@ -11,13 +11,98 @@ services:
       POSTGRES_DB: siksha_saathi
     volumes:
       - siksha_pgdata:/var/lib/postgresql/data
+      - ./db-scripts/init-schema.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d siksha_saathi"]
       interval: 3s
       timeout: 3s
-      retries: 5
+      retries: 10
       start_period: 5s
+    networks:
+      - siksha_network
+
+  embedding-service:
+    build:
+      context: ./embedding-service
+      dockerfile: Dockerfile
+    container_name: siksha-embedding-service
+    restart: unless-stopped
+    ports:
+      - "8100:8100"
+    environment:
+      EMBEDDING_HOST: 0.0.0.0
+      EMBEDDING_PORT: 8100
+      TRANSFORMERS_CACHE: /root/.cache/huggingface
+      HF_HOME: /root/.cache/huggingface
+    volumes:
+      - model_cache:/root/.cache/huggingface
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8100/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 25
+      start_period: 15s
+    networks:
+      - siksha_network
+
+  ingestion-worker:
+    build:
+      context: ./optimized-worker
+      dockerfile: Dockerfile
+    container_name: siksha-ingestion-worker
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/siksha_saathi
+      LOCAL_EMBEDDING_URL: http://embedding-service:8100
+      EMBEDDING_SERVICE_URL: http://embedding-service:8100
+      LOCAL_STORAGE_PATH: /app/.storage
+      STORAGE_PROVIDER: local
+    volumes:
+      - storage_data:/app/.storage
+      - model_cache:/root/.cache/huggingface
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding-service:
+        condition: service_healthy
+    networks:
+      - siksha_network
+
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: siksha-web
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/siksha_saathi
+      LOCAL_EMBEDDING_URL: http://embedding-service:8100
+      LOCAL_STORAGE_PATH: /app/.storage
+      STORAGE_PROVIDER: local
+      NODE_ENV: development
+    volumes:
+      - storage_data:/app/.storage
+      - ./src:/app/src
+      - ./public:/app/public
+      - ./departments_curriculum.json:/app/departments_curriculum.json:ro
+    depends_on:
+      postgres:
+        condition: service_healthy
+      embedding-service:
+        condition: service_healthy
+    networks:
+      - siksha_network
 
 volumes:
   siksha_pgdata:
     name: siksha_pgdata
+  model_cache:
+    name: siksha_model_cache
+  storage_data:
+    name: siksha_storage_data
+
+networks:
+  siksha_network:
+    name: siksha_network

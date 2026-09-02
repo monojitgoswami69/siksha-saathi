@@ -130,39 +130,59 @@ npm run db:generate   # sync drizzle migrations from schema.ts
 
 ## Getting Started
 
-### Prerequisites
-- Node.js 20+
-- Python 3.9+ with pip
-- PostgreSQL (NeonDB) with pgvector extension
+### Method 1: Docker (Cross-Platform & Zero Dependencies — Recommended)
 
-### 1. Web app
+Run the entire stack (PostgreSQL with pgvector, FastAPI embedding service, ingestion worker, and Next.js web) natively in containers with zero host configuration:
+
 ```bash
-npm install
-cp .env.example .env.local        # configure DATABASE_URL, GEMINI_API_KEY, etc.
-npm run db:setup                   # creates tables, seeds admin
+# 1. Clone & copy environment variables
+cp .env.example .env.local
+
+# 2. Build & launch all services
+docker compose up --build -d
+
+# 3. View live status & logs
+docker compose ps
+docker compose logs -f
+
+# 4. Stop all services cleanly
+docker compose down
 ```
 
-### 2. Python environment (embedding service + worker)
+- **Next.js Web UI**: [http://localhost:3000](http://localhost:3000)
+- **Embedding & Reranker Service**: [http://localhost:8100/health](http://localhost:8100/health)
+- **PostgreSQL Database**: `localhost:5432` (`siksha_saathi`)
+- **Default Admin Login**: `admin@sikshasaathi.in` / `admin123`
+
+---
+
+### Method 2: Local Host Development
+
+If running directly on the host machine without Docker containers:
+
+#### Prerequisites
+- Node.js 20+
+- Python 3.9+ with pip
+- Docker Desktop or PostgreSQL 16 with pgvector
+
+#### 1. Setup Dependencies
 ```bash
+npm install
+cp .env.example .env.local
+
 cd optimized-worker
 python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 cd ../embedding-service
-pip install -r requirements.txt    # shares the same venv
+pip install -r requirements.txt
+cd ..
 ```
 
-### 3. Start everything
+#### 2. Run Local Stack
 ```bash
 ./dev-local.sh
 ```
-
-This starts:
-1. **Embedding service** on `:8100` (waits for model to load)
-2. **Next.js** on `:3000`
-3. **Ingestion worker** (background)
-
-Admin login: `admin@sikshasaathi.in` / `admin123` (from `SEED_ADMIN_*` — **change before production**).
 
 ### Start individually
 ```bash

@@ -47,7 +47,14 @@ EMB_PID=""
 NEXT_PID=""
 WORKER_PID=""
 
+CLEANED_UP=0
 cleanup() {
+  if [ "$CLEANED_UP" -eq 1 ]; then
+    exit 0
+  fi
+  CLEANED_UP=1
+  trap - EXIT INT TERM HUP
+
   echo -e "\n${YELLOW}Stopping all services...${NC}"
   # 1. Kill child process trees (e.g. node subprocesses spawned by npm)
   if [ -n "${NEXT_PID}" ]; then
@@ -62,41 +69,23 @@ cleanup() {
     pkill -P "${EMB_PID}" 2>/dev/null || true
     kill "${EMB_PID}" 2>/dev/null || true
   fi
-  sleep 1
 
-  # 2. Force-kill any stubborn remaining processes
-  if [ -n "${NEXT_PID}" ]; then
-    pkill -9 -P "${NEXT_PID}" 2>/dev/null || true
-    kill -9 "${NEXT_PID}" 2>/dev/null || true
-  fi
-  if [ -n "${WORKER_PID}" ]; then
-    pkill -9 -P "${WORKER_PID}" 2>/dev/null || true
-    kill -9 "${WORKER_PID}" 2>/dev/null || true
-  fi
-  if [ -n "${EMB_PID}" ]; then
-    pkill -9 -P "${EMB_PID}" 2>/dev/null || true
-    kill -9 "${EMB_PID}" 2>/dev/null || true
-  fi
-
-  # 3. Stop PostgreSQL container and Docker daemon if local database was used
+  # 2. Stop PostgreSQL container fast if local database was used
   if [ "${LOCAL_DOCKER_USED:-false}" = true ]; then
     if command -v docker >/dev/null 2>&1; then
       echo -e "${YELLOW}Stopping siksha-postgres container...${NC}"
-      docker stop siksha-postgres >/dev/null 2>&1 || true
-
-      echo -e "${YELLOW}Stopping Docker daemon (${OS_TYPE})...${NC}"
-      if [ "$OS_TYPE" = "mac" ]; then
-        osascript -e 'quit app "Docker"' >/dev/null 2>&1 || killall "Docker Desktop" >/dev/null 2>&1 || true
-      elif [ "$OS_TYPE" = "linux" ]; then
-        systemctl --user stop docker 2>/dev/null || sudo systemctl stop docker 2>/dev/null || true
-      elif [ "$OS_TYPE" = "windows" ]; then
-        taskkill //F //IM "Docker Desktop.exe" >/dev/null 2>&1 || true
-      fi
+      docker stop -t 2 siksha-postgres >/dev/null 2>&1 || true
     fi
   fi
 
+  # 3. Force-kill any stubborn remaining processes
+  if [ -n "${NEXT_PID}" ]; then pkill -9 -P "${NEXT_PID}" 2>/dev/null || true; kill -9 "${NEXT_PID}" 2>/dev/null || true; fi
+  if [ -n "${WORKER_PID}" ]; then pkill -9 -P "${WORKER_PID}" 2>/dev/null || true; kill -9 "${WORKER_PID}" 2>/dev/null || true; fi
+  if [ -n "${EMB_PID}" ]; then pkill -9 -P "${EMB_PID}" 2>/dev/null || true; kill -9 "${EMB_PID}" 2>/dev/null || true; fi
+
   wait 2>/dev/null || true
   echo -e "${GREEN}All services stopped cleanly.${NC}"
+  exit 0
 }
 trap cleanup EXIT INT TERM HUP
 
@@ -133,7 +122,7 @@ if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0
   echo -e "\n${YELLOW}[0/4] Checking Local PostgreSQL (Docker)...${NC}"
   if command -v docker >/dev/null 2>&1; then
     if ! docker info >/dev/null 2>&1; then
-      echo -e "${CYAN}   Attempting to start Docker daemon (${OS_TYPE})...${NC}"
+      echo -e "${CYAN}   Starting Docker daemon (${OS_TYPE})...${NC}"
       if [ "$OS_TYPE" = "mac" ]; then
         open -a Docker 2>/dev/null || true
       elif [ "$OS_TYPE" = "linux" ]; then
@@ -141,25 +130,26 @@ if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0
       elif [ "$OS_TYPE" = "windows" ]; then
         cmd.exe /c start "" "Docker Desktop" 2>/dev/null || true
       fi
-      echo -e "   Waiting for Docker daemon to initialize..."
-      DOCKER_RETRIES=20
+      echo -ne "   Waiting for Docker daemon to become ready"
+      DOCKER_RETRIES=30
       until docker info >/dev/null 2>&1 || [ $DOCKER_RETRIES -eq 0 ]; do
+        echo -ne "."
         sleep 2
         DOCKER_RETRIES=$((DOCKER_RETRIES - 1))
       done
+      echo ""
     fi
 
     if docker info >/dev/null 2>&1; then
-      if ! docker ps --format '{{.Names}}' | grep -q "^siksha-postgres$"; then
-        if docker ps -a --format '{{.Names}}' | grep -q "^siksha-postgres$"; then
-          echo -e "${CYAN}   Starting existing siksha-postgres container...${NC}"
-          docker start siksha-postgres >/dev/null
-        else
-          echo -e "${CYAN}   Starting new siksha-postgres container via docker compose...${NC}"
-          docker compose up -d postgres >/dev/null
-        fi
-      else
+      CONTAINER_STATE=$(docker inspect -f '{{.State.Running}}' siksha-postgres 2>/dev/null || echo "not_found")
+      if [ "$CONTAINER_STATE" = "true" ]; then
         echo -e "${GREEN}   ✅ siksha-postgres container is already running.${NC}"
+      elif [ "$CONTAINER_STATE" = "false" ]; then
+        echo -e "${CYAN}   Starting existing siksha-postgres container...${NC}"
+        docker start siksha-postgres >/dev/null 2>&1
+      else
+        echo -e "${CYAN}   Creating siksha-postgres container via docker compose...${NC}"
+        docker compose up -d postgres >/dev/null 2>&1
       fi
 
       echo -e "      Waiting for PostgreSQL on port 5432 to be ready..."
@@ -177,7 +167,7 @@ if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0
       fi
     else
       echo -e "${RED}❌ Docker daemon is not running!${NC}"
-      echo -e "   Please start Docker Desktop/daemon to use local PostgreSQL, or switch DATABASE_URL in .env.local to NeonDB."
+      echo -e "   Please start Docker Desktop to use local PostgreSQL, or switch DATABASE_URL in .env.local to NeonDB."
       exit 1
     fi
   else

@@ -21,7 +21,8 @@ export function getDbPool(): Pool {
       console.warn('⚠️ DATABASE_URL not set in environment variables');
     }
 
-    const isLocal = connectionString?.includes('localhost') || connectionString?.includes('127.0.0.1');
+    const isNeon = connectionString?.includes('neon.tech');
+    const isLocal = !isNeon;
     const config: PoolConfig = {
       connectionString: connectionString || '',
       ...(isLocal ? { ssl: false } : {}),
@@ -53,7 +54,8 @@ export async function query<T = any>(
   params?: any[]
 ): Promise<{ rows: T[]; rowCount: number | null }> {
   const connectionString = process.env.DATABASE_URL || '';
-  const isLocal = connectionString.includes('localhost') || connectionString.includes('127.0.0.1');
+  const isNeon = connectionString.includes('neon.tech');
+  const isLocal = !isNeon;
 
   try {
     if (isLocal) {
