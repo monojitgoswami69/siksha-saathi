@@ -18,6 +18,7 @@ services:
       timeout: 2s
       retries: 10
       start_period: 2s
+    mem_limit: 512m
     networks:
       - siksha_network
 
@@ -42,6 +43,7 @@ services:
       timeout: 2s
       retries: 20
       start_period: 4s
+    mem_limit: 1800m
     networks:
       - siksha_network
 
@@ -65,6 +67,7 @@ services:
         condition: service_healthy
       embedding-service:
         condition: service_healthy
+    mem_limit: 1024m
     networks:
       - siksha_network
 
@@ -92,6 +95,7 @@ services:
         condition: service_healthy
       embedding-service:
         condition: service_healthy
+    mem_limit: 768m
     networks:
       - siksha_network
 

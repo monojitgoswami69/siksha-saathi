@@ -232,35 +232,32 @@ All retrieval strictly enforces academic scoping filters (stream, semester, sect
 
 ---
 
-## Local Development
+## Local & Cross-Platform Development (Docker Native)
 
-### Start everything:
+The entire application stack (PostgreSQL with pgvector, FastAPI embedding & reranker microservice, Python ingestion worker, and Next.js web application) runs natively in isolated Docker containers with automated networking, volume persistence, and memory capping.
+
+### Start the full stack:
 ```bash
-./dev-local.sh
+docker compose up -d
+# or: npm run docker:up
 ```
 
-This:
-1. Starts the embedding service on `:8100` (waits for `/health == ready`)
-2. Starts Next.js on `:3000`
-3. Starts the ingestion worker
+This starts all 4 coordinated services:
+1. **PostgreSQL** on `:5432` with automated schema initialization from `db-scripts/init-schema.sql`
+2. **Embedding & Reranker Service** on `:8100` (`multilingual-e5-small` + `ms-marco-MiniLM-L-6-v2`)
+3. **Ingestion Worker** (background document extraction, OCR & indexing)
+4. **Next.js Web UI** on `:3000` with hot-reload support
 
-### Start individually:
+### Check status & real-time logs:
 ```bash
-# 1. Embedding service
-source optimized-worker/.venv/bin/activate
-cd embedding-service && uvicorn app.main:app --host 127.0.0.1 --port 8100
-
-# 2. Next.js
-npm run dev
-
-# 3. Ingestion worker
-source optimized-worker/.venv/bin/activate
-python -m worker.main
+docker compose ps
+docker compose logs -f
 ```
 
-### Database setup:
+### Clean shutdown (preserves all database data and model cache):
 ```bash
-npm run db:setup    # init schema + seed admin + validate
+docker compose down
+# or: npm run docker:down
 ```
 
 ---

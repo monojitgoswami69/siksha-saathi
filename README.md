@@ -108,7 +108,7 @@ siksha-saathi/
 ├── db-scripts/                   # Database management scripts
 ├── drizzle/                      # Drizzle ORM migrations
 ├── scripts/                      # Utility scripts (Dropbox token)
-├── dev-local.sh                  # Start all 3 processes
+├── docker-compose.yml            # Multi-container Docker Compose orchestration
 └── architecture.md               # Detailed architecture documentation
 ```
 
@@ -130,23 +130,25 @@ npm run db:generate   # sync drizzle migrations from schema.ts
 
 ## Getting Started
 
-### Method 1: Docker (Cross-Platform & Zero Dependencies — Recommended)
+### Unified Docker Stack (Recommended)
 
 Run the entire stack (PostgreSQL with pgvector, FastAPI embedding service, ingestion worker, and Next.js web) natively in containers with zero host configuration:
 
 ```bash
-# 1. Clone & copy environment variables
+# 1. Copy environment variables
 cp .env.example .env.local
 
 # 2. Build & launch all services
-docker compose up --build -d
+npm run docker:up
+# or: docker compose up -d
 
 # 3. View live status & logs
-docker compose ps
-docker compose logs -f
+npm run docker:ps
+npm run docker:logs
 
 # 4. Stop all services cleanly
-docker compose down
+npm run docker:down
+# or: docker compose down
 ```
 
 - **Next.js Web UI**: [http://localhost:3000](http://localhost:3000)
@@ -156,14 +158,14 @@ docker compose down
 
 ---
 
-### Method 2: Local Host Development
+### Running Services Individually (Manual Development)
 
 If running directly on the host machine without Docker containers:
 
 #### Prerequisites
 - Node.js 20+
 - Python 3.9+ with pip
-- Docker Desktop or PostgreSQL 16 with pgvector
+- PostgreSQL 16 with pgvector extension
 
 #### 1. Setup Dependencies
 ```bash
@@ -179,21 +181,16 @@ pip install -r requirements.txt
 cd ..
 ```
 
-#### 2. Run Local Stack
+#### 2. Start Services Individually
 ```bash
-./dev-local.sh
-```
-
-### Start individually
-```bash
-# Embedding service
+# 1. Embedding service (terminal 1)
 source optimized-worker/.venv/bin/activate
 cd embedding-service && uvicorn app.main:app --host 127.0.0.1 --port 8100
 
-# Next.js (in a separate terminal)
+# 2. Next.js (terminal 2)
 npm run dev
 
-# Ingestion worker (in a separate terminal)
+# 3. Ingestion worker (terminal 3)
 source optimized-worker/.venv/bin/activate
 python -m worker.main
 ```
