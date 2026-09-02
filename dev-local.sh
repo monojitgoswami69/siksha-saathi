@@ -49,24 +49,39 @@ WORKER_PID=""
 
 cleanup() {
   echo -e "\n${YELLOW}Stopping all services...${NC}"
-  if [ -n "${WORKER_PID}" ] && kill -0 "${WORKER_PID}" 2>/dev/null; then
-    kill "${WORKER_PID}" 2>/dev/null || true
-  fi
-  if [ -n "${NEXT_PID}" ] && kill -0 "${NEXT_PID}" 2>/dev/null; then
+  # 1. Kill child process trees (e.g. node subprocesses spawned by npm)
+  if [ -n "${NEXT_PID}" ]; then
+    pkill -P "${NEXT_PID}" 2>/dev/null || true
     kill "${NEXT_PID}" 2>/dev/null || true
   fi
-  if [ -n "${EMB_PID}" ] && kill -0 "${EMB_PID}" 2>/dev/null; then
+  if [ -n "${WORKER_PID}" ]; then
+    pkill -P "${WORKER_PID}" 2>/dev/null || true
+    kill "${WORKER_PID}" 2>/dev/null || true
+  fi
+  if [ -n "${EMB_PID}" ]; then
+    pkill -P "${EMB_PID}" 2>/dev/null || true
     kill "${EMB_PID}" 2>/dev/null || true
   fi
   sleep 1
-  # Force kill any lingering processes
-  if [ -n "${WORKER_PID}" ]; then kill -9 "${WORKER_PID}" 2>/dev/null || true; fi
-  if [ -n "${NEXT_PID}" ]; then kill -9 "${NEXT_PID}" 2>/dev/null || true; fi
-  if [ -n "${EMB_PID}" ]; then kill -9 "${EMB_PID}" 2>/dev/null || true; fi
+
+  # 2. Force-kill any stubborn remaining processes
+  if [ -n "${NEXT_PID}" ]; then
+    pkill -9 -P "${NEXT_PID}" 2>/dev/null || true
+    kill -9 "${NEXT_PID}" 2>/dev/null || true
+  fi
+  if [ -n "${WORKER_PID}" ]; then
+    pkill -9 -P "${WORKER_PID}" 2>/dev/null || true
+    kill -9 "${WORKER_PID}" 2>/dev/null || true
+  fi
+  if [ -n "${EMB_PID}" ]; then
+    pkill -9 -P "${EMB_PID}" 2>/dev/null || true
+    kill -9 "${EMB_PID}" 2>/dev/null || true
+  fi
+
   wait 2>/dev/null || true
   echo -e "${GREEN}All services stopped cleanly.${NC}"
 }
-trap cleanup EXIT INT TERM
+trap cleanup EXIT INT TERM HUP
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║          Siksha Saathi — Local Development Stack           ║${NC}"
