@@ -9,6 +9,32 @@ export async function GET(req: NextRequest) {
       return NextResponse.json({ detail: 'Unauthorized' }, { status: 401 });
     }
 
+    // Security & Scope: If student, strictly lock down to their own enrolled stream & semester
+    if (user.scope === 'student' || user.role === 'student') {
+      const profileRes = await query(
+        'SELECT stream, sem FROM student_users WHERE id = $1;',
+        [user.uid]
+      ).catch(() => ({ rows: [], rowCount: 0 }));
+
+      if (profileRes.rowCount && profileRes.rowCount > 0) {
+        const p = profileRes.rows[0] as any;
+        const studentStream = p.stream || 'cse';
+        const studentSem = String(p.sem || '1');
+        const cleanSem = studentSem.replace(/^(?:sem|semester)\s*/i, '');
+
+        const res = await query(
+          'SELECT stream, semester, subjects, sections, updated_at FROM curriculum WHERE LOWER(stream) = LOWER($1) AND (semester = $2 OR semester = $3);',
+          [studentStream, studentSem, cleanSem]
+        );
+
+        return NextResponse.json({
+          curriculum: res.rows,
+          total: res.rowCount,
+        });
+      }
+    }
+
+    // Admin / Faculty / Dashboard users
     const { searchParams } = new URL(req.url);
     const stream = searchParams.get('stream');
     const semester = searchParams.get('semester');
@@ -18,7 +44,7 @@ export async function GET(req: NextRequest) {
     let pIdx = 1;
 
     if (stream) {
-      sql += ` AND stream = $${pIdx}`;
+      sql += ` AND LOWER(stream) = LOWER($${pIdx})`;
       params.push(stream);
       pIdx++;
     }

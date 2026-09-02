@@ -1,12 +1,13 @@
 'use client';
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useMemo } from 'react';
 import { api } from '@/lib/client/api';
 
 export interface ChatFilter {
   subject?: string;
   document_id?: string;
   file_name?: string;
+  module?: string;
 }
 
 interface ChatInputProps {
@@ -24,25 +25,38 @@ export function ChatInput({ onSendMessage, isStreaming, presetDocumentId }: Chat
 
   const [subjects, setSubjects] = useState<string[]>([]);
   const [files, setFiles] = useState<
-    Array<{ document_id: string; file_name: string; title: string; subject?: string }>
+    Array<{ document_id: string; file_name: string; title: string; subject?: string; module?: string }>
   >([]);
   const [subjectFilter, setSubjectFilter] = useState<string>('');
-  const [fileFilter, setFileFilter] = useState<string>('');
+  const [materialFilter, setMaterialFilter] = useState<string>('');
 
   useEffect(() => {
     isListeningRef.current = isListening;
   }, [isStreaming]);
 
+  // Load available subjects and document files from student scope
   useEffect(() => {
     api.filters
       .getFilters()
       .then((data) => {
         if (data?.subjects) setSubjects(data.subjects);
-        if (data?.files) setFiles(data.files);
+        if (data?.files) {
+          setFiles(data.files);
+          if (presetDocumentId) {
+            const matched = data.files.find((f: any) => f.document_id === presetDocumentId);
+            if (matched) {
+              setMaterialFilter(presetDocumentId);
+              if (matched.subject) {
+                setSubjectFilter(matched.subject);
+              }
+            }
+          }
+        }
       })
-      .catch(() => {});
-  }, []);
+      .catch((err) => console.warn('Failed to load chat filters:', err));
+  }, [presetDocumentId]);
 
+  // Speech recognition initialization
   useEffect(() => {
     if (typeof window !== 'undefined') {
       const SpeechRecognition =
@@ -103,6 +117,29 @@ export function ChatInput({ onSendMessage, isStreaming, presetDocumentId }: Chat
     }
   };
 
+  // Materials available under the currently selected subject (or all if untouched)
+  const availableMaterials = useMemo(() => {
+    if (!subjectFilter) return files;
+    return files.filter(
+      (f) => !f.subject || f.subject.toLowerCase() === subjectFilter.toLowerCase()
+    );
+  }, [files, subjectFilter]);
+
+  const selectedFile = useMemo(
+    () => files.find((f) => f.document_id === materialFilter),
+    [files, materialFilter]
+  );
+
+  const selectedMaterialLabel = useMemo(() => {
+    if (!materialFilter) {
+      return subjectFilter ? 'All Modules' : 'All Materials';
+    }
+    if (selectedFile) {
+      return `${selectedFile.module ? `[${selectedFile.module}] ` : ''}${selectedFile.title || selectedFile.file_name}`;
+    }
+    return 'All Materials';
+  }, [materialFilter, subjectFilter, selectedFile]);
+
   const handleSubmit = () => {
     if (isListening) {
       setIsListening(false);
@@ -112,83 +149,113 @@ export function ChatInput({ onSendMessage, isStreaming, presetDocumentId }: Chat
     }
     if (inputValue.trim() && !isStreaming) {
       const filter: ChatFilter = {};
-      if (presetDocumentId) {
-        filter.document_id = presetDocumentId;
-      } else {
-        if (subjectFilter) filter.subject = subjectFilter;
-        const selectedFile = fileFilter ? files.find((f) => f.document_id === fileFilter) : undefined;
-        if (selectedFile) {
-          filter.document_id = selectedFile.document_id;
-          filter.file_name = selectedFile.file_name;
+
+      if (subjectFilter) {
+        filter.subject = subjectFilter;
+      }
+
+      if (materialFilter && selectedFile) {
+        filter.document_id = selectedFile.document_id;
+        filter.file_name = selectedFile.file_name;
+        filter.module = selectedFile.module;
+        if (!filter.subject && selectedFile.subject) {
+          filter.subject = selectedFile.subject;
         }
       }
+
       onSendMessage(inputValue, filter);
       setInputValue('');
       originalInputRef.current = '';
     }
   };
 
-  const hasFilterChips = !presetDocumentId && (subjectFilter || fileFilter);
+  const hasActiveFilters = Boolean(subjectFilter || materialFilter);
 
   return (
-    <div className="absolute bottom-0 w-full z-40 font-chat bg-gradient-to-t from-[#f1f5f9] via-[#f1f5f9] to-transparent p-4">
+    <div className="absolute bottom-0 w-full z-40 font-chat bg-gradient-to-t from-[#f1f5f9] via-[#f1f5f9] to-transparent p-4 pt-6">
       <div className="max-w-3xl mx-auto">
-        {/* Filter chips row */}
-        {!presetDocumentId && (
-          <div className="flex items-center gap-2 mb-2 px-1 flex-wrap">
+        {/* Minimal Single-Row Scoping: Subject / Material */}
+        <div className="flex items-center justify-center gap-2 mb-2 px-4 overflow-x-auto scrollbar-hide text-xs">
+          {/* Subject Direct Trigger */}
+          <div className="relative inline-flex items-center gap-0.5 group cursor-pointer shrink-0 hover:text-slate-900 transition-colors">
+            <span
+              className={`font-medium text-xs select-none ${
+                subjectFilter ? 'text-blue-600 font-semibold' : 'text-slate-600'
+              }`}
+            >
+              {subjectFilter || 'All Subjects'}
+            </span>
+            <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:text-slate-700 transition-colors pointer-events-none">
+              expand_more
+            </span>
             <select
               value={subjectFilter}
               onChange={(e) => {
                 setSubjectFilter(e.target.value);
-                setFileFilter('');
+                setMaterialFilter('');
               }}
               disabled={isStreaming}
-              className={`text-[11px] px-2 py-1 rounded-lg border bg-white text-slate-600 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 ${
-                subjectFilter ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200'
-              }`}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full text-xs"
             >
-              <option value="">All subjects</option>
+              <option value="">All Subjects</option>
               {subjects.map((s) => (
                 <option key={s} value={s}>
                   {s}
                 </option>
               ))}
             </select>
+          </div>
 
-            <select
-              value={fileFilter}
-              onChange={(e) => setFileFilter(e.target.value)}
-              disabled={isStreaming || !subjectFilter}
-              className={`max-w-[220px] truncate text-[11px] px-2 py-1 rounded-lg border bg-white text-slate-600 font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500/20 disabled:opacity-50 ${
-                fileFilter ? 'border-indigo-300 text-indigo-700 bg-indigo-50' : 'border-slate-200'
+          <span className="text-slate-300 select-none text-[11px]">/</span>
+
+          {/* Material / Module Direct Trigger */}
+          <div className="relative inline-flex items-center gap-0.5 group cursor-pointer max-w-[280px] sm:max-w-[420px] shrink-0 hover:text-slate-900 transition-colors">
+            <span
+              className={`font-medium text-xs truncate select-none ${
+                materialFilter ? 'text-blue-600 font-semibold' : 'text-slate-600'
               }`}
             >
-              <option value="">All files{subjectFilter ? ` (${subjects.includes(subjectFilter) ? '' : ''})` : ''}</option>
-              {(subjectFilter
-                ? files.filter((f) => !f.subject || f.subject === subjectFilter)
-                : files
-              ).map((f) => (
+              {selectedMaterialLabel}
+            </span>
+            <span className="material-symbols-outlined text-[15px] text-slate-400 group-hover:text-slate-700 shrink-0 transition-colors pointer-events-none">
+              expand_more
+            </span>
+            <select
+              value={materialFilter}
+              onChange={(e) => setMaterialFilter(e.target.value)}
+              disabled={isStreaming}
+              className="absolute inset-0 opacity-0 cursor-pointer w-full h-full text-xs"
+            >
+              <option value="">
+                {subjectFilter ? 'All Modules' : 'All Materials'}
+              </option>
+              {availableMaterials.map((f) => (
                 <option key={f.document_id} value={f.document_id}>
-                  {f.file_name || f.title}
+                  {f.module ? `[${f.module}] ` : ''}
+                  {f.title || f.file_name}
                 </option>
               ))}
             </select>
-
-            {hasFilterChips && (
-              <button
-                type="button"
-                onClick={() => {
-                  setSubjectFilter('');
-                  setFileFilter('');
-                }}
-                className="text-[10px] text-slate-400 hover:text-slate-600 font-medium"
-              >
-                clear
-              </button>
-            )}
           </div>
-        )}
 
+          {/* Direct Clear Cross Button */}
+          {hasActiveFilters && (
+            <button
+              type="button"
+              onClick={() => {
+                setSubjectFilter('');
+                setMaterialFilter('');
+              }}
+              disabled={isStreaming}
+              className="text-slate-400 hover:text-slate-700 p-0.5 ml-0.5 transition-colors cursor-pointer flex items-center shrink-0"
+              title="Reset to All"
+            >
+              <span className="material-symbols-outlined text-[13px]">close</span>
+            </button>
+          )}
+        </div>
+
+        {/* Message Input Box */}
         <div className="clay-card p-2 rounded-[2rem] flex items-center gap-2 border border-white/80 shadow-2xl pl-6">
           <input
             type="text"

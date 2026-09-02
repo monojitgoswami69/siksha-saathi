@@ -11,13 +11,13 @@ export async function GET(req: NextRequest) {
     }
 
     const res = await query(
-      `SELECT s.id as session_id, s.title, s.is_pinned, s.created_at, s.updated_at,
+      `SELECT s.id as session_id, s.title, s.is_pinned, s.pinned_at, s.created_at, s.updated_at,
               COUNT(m.id)::int as message_count
        FROM chat_sessions s
        LEFT JOIN chat_messages m ON s.id = m.session_id
        WHERE s.user_id = $1
        GROUP BY s.id
-       ORDER BY s.is_pinned DESC, s.updated_at DESC
+       ORDER BY s.is_pinned DESC, s.pinned_at ASC NULLS LAST, s.updated_at DESC
        LIMIT 50;`,
       [user.uid]
     );
@@ -28,6 +28,7 @@ export async function GET(req: NextRequest) {
         id: s.session_id,
         title: s.title,
         is_pinned: s.is_pinned,
+        pinned_at: s.pinned_at ? new Date(s.pinned_at).toISOString() : null,
         created_at: s.created_at ? new Date(s.created_at).toISOString() : new Date().toISOString(),
         updated_at: s.updated_at ? new Date(s.updated_at).toISOString() : new Date().toISOString(),
         message_count: s.message_count,

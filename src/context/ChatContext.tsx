@@ -16,13 +16,31 @@ interface ChatContextValue {
   isInitialLoading: boolean;
   handleNewChat: (title?: string) => Promise<string | null>;
   handleSelectChat: (chatId: string) => void;
-  handleSendMessage: (text: string, contextFilter?: { document_id?: string; subject?: string; file_name?: string }) => Promise<void>;
+  handleSendMessage: (text: string, contextFilter?: { document_id?: string; subject?: string; file_name?: string; module?: string }) => Promise<void>;
   handlePinChat: (chatId: string) => Promise<void>;
   handleDeleteChat: (chatId: string) => Promise<void>;
   initializeChats: () => Promise<void>;
 }
 
 const ChatContext = createContext<ChatContextValue | null>(null);
+
+function sortChats(items: ChatItem[]): ChatItem[] {
+  return [...items].sort((a, b) => {
+    if (Boolean(a.is_pinned) !== Boolean(b.is_pinned)) {
+      return a.is_pinned ? -1 : 1;
+    }
+    // For pinned chats: First Come First Served (earlier pins stay higher -> ASCENDING)
+    if (a.is_pinned && b.is_pinned) {
+      const pinA = new Date(a.pinned_at || a.created_at || 0).getTime();
+      const pinB = new Date(b.pinned_at || b.created_at || 0).getTime();
+      return pinA - pinB;
+    }
+    // For unpinned chats: Most recently updated -> DESCENDING
+    const timeA = new Date(a.updated_at || a.created_at || 0).getTime();
+    const timeB = new Date(b.updated_at || b.created_at || 0).getTime();
+    return timeB - timeA;
+  });
+}
 
 export function ChatProvider({ children }: { children: React.ReactNode }) {
   const { user, profile, isAuthenticated } = useStudentAuth();
@@ -52,8 +70,9 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           messages: [],
         }));
 
-        setChats(loadedChats);
-        setCurrentChatId(loadedChats[0].id);
+        const sorted = sortChats(loadedChats);
+        setChats(sorted);
+        setCurrentChatId(sorted[0].id);
 
         // Fetch messages for active session
         try {
@@ -122,7 +141,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
         ],
       };
 
-      setChats((prev) => [newChat, ...prev]);
+      setChats((prev) => sortChats([newChat, ...prev]));
       setCurrentChatId(newChat.id);
       return newChat.id;
     } catch (err) {
@@ -136,10 +155,22 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
     if (!chat) return;
 
     const newPinned = !chat.is_pinned;
+    const nowIso = new Date().toISOString();
     try {
       await api.sessions.update(chatId, { is_pinned: newPinned });
       setChats((prev) =>
-        prev.map((c) => (c.id === chatId ? { ...c, is_pinned: newPinned } : c))
+        sortChats(
+          prev.map((c) =>
+            c.id === chatId
+              ? {
+                  ...c,
+                  is_pinned: newPinned,
+                  pinned_at: newPinned ? c.pinned_at || nowIso : null,
+                  updated_at: nowIso,
+                }
+              : c
+          )
+        )
       );
     } catch (err) {
       console.error('Failed to pin chat:', err);
@@ -161,7 +192,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
   const handleSendMessage = async (
     text: string,
-    contextFilter?: { document_id?: string; subject?: string; file_name?: string }
+    contextFilter?: { document_id?: string; subject?: string; file_name?: string; module?: string }
   ) => {
     if (!text.trim() || isStreaming) return;
 
@@ -223,6 +254,7 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           document_id: contextFilter?.document_id,
           file_name: contextFilter?.file_name,
           subject: contextFilter?.subject,
+          module: contextFilter?.module,
           history,
         }),
       });
@@ -242,9 +274,13 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
 
       while (!streamDone) {
         const { value, done } = await reader.read();
-        streamDone = done;
+        if (done) {
+          streamDone = true;
+        }
 
-        buffer += decoder.decode(value, { stream: true });
+        if (value) {
+          buffer += decoder.decode(value, { stream: true });
+        }
         const lines = buffer.split('\n');
         buffer = lines.pop() || '';
 
@@ -252,17 +288,24 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           if (line.startsWith('data: ')) {
             const dataStr = line.slice(6).trim();
             if (dataStr === '[DONE]') {
-              buffer = '';
               streamDone = true;
               break;
             }
             try {
               const parsed = JSON.parse(dataStr);
+              if (parsed.type === 'session_name' && parsed.title) {
+                const newTitle = parsed.title;
+                const matchId = parsed.session_id || targetChatId;
+                setChats((prev) =>
+                  prev.map((c) =>
+                    c.id === matchId || c.session_id === matchId || c.id === targetChatId
+                      ? { ...c, title: newTitle }
+                      : c
+                  )
+                );
+              }
               if (parsed.sources && Array.isArray(parsed.sources)) {
                 streamSources = parsed.sources;
-              }
-              if (parsed.text) {
-                accumulated += parsed.text;
                 setChats((prev) =>
                   prev.map((c) => {
                     if (c.id !== targetChatId) return c;
@@ -271,7 +314,27 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
                     if (lastIdx >= 0) {
                       msgs[lastIdx] = {
                         ...msgs[lastIdx],
-                        content: accumulated,
+                        sources: streamSources.length > 0 ? streamSources : undefined,
+                      };
+                    }
+                    return { ...c, messages: msgs };
+                  })
+                );
+              }
+              if (parsed.text) {
+                accumulated += parsed.text;
+                const cleanDisplay = accumulated
+                  .replace(/<!--\s*SESSION_NAME:.*?(-->|$)/gis, '')
+                  .trim();
+                setChats((prev) =>
+                  prev.map((c) => {
+                    if (c.id !== targetChatId) return c;
+                    const msgs = [...c.messages];
+                    const lastIdx = msgs.length - 1;
+                    if (lastIdx >= 0) {
+                      msgs[lastIdx] = {
+                        ...msgs[lastIdx],
+                        content: cleanDisplay || accumulated,
                         sources: streamSources.length > 0 ? streamSources : undefined,
                       };
                     }
@@ -283,6 +346,52 @@ export function ChatProvider({ children }: { children: React.ReactNode }) {
           }
         }
       }
+
+      // Flush any remaining buffer if stream ended without trailing newline
+      if (buffer.trim()) {
+        const remainingLines = buffer.split('\n');
+        for (const line of remainingLines) {
+          if (line.startsWith('data: ')) {
+            const dataStr = line.slice(6).trim();
+            try {
+              const parsed = JSON.parse(dataStr);
+              if (parsed.type === 'session_name' && parsed.title) {
+                const newTitle = parsed.title;
+                const matchId = parsed.session_id || targetChatId;
+                setChats((prev) =>
+                  prev.map((c) =>
+                    c.id === matchId || c.session_id === matchId || c.id === targetChatId
+                      ? { ...c, title: newTitle }
+                      : c
+                  )
+                );
+              }
+              if (parsed.sources && Array.isArray(parsed.sources)) {
+                streamSources = parsed.sources;
+              }
+            } catch {}
+          }
+        }
+      }
+
+      const finalClean = accumulated
+        .replace(/<!--\s*SESSION_NAME:.*?(-->|$)/gis, '')
+        .trim();
+      setChats((prev) =>
+        prev.map((c) => {
+          if (c.id !== targetChatId) return c;
+          const msgs = [...c.messages];
+          const lastIdx = msgs.length - 1;
+          if (lastIdx >= 0) {
+            msgs[lastIdx] = {
+              ...msgs[lastIdx],
+              content: finalClean || accumulated,
+              sources: streamSources.length > 0 ? streamSources : undefined,
+            };
+          }
+          return { ...c, messages: msgs };
+        })
+      );
     } catch (err: any) {
       console.error('Chat error:', err);
       setChats((prev) =>

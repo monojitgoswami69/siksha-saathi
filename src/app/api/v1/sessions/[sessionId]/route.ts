@@ -50,9 +50,14 @@ export async function PATCH(
       `UPDATE chat_sessions
        SET title = COALESCE($1, title),
            is_pinned = COALESCE($2, is_pinned),
+           pinned_at = CASE
+             WHEN $2 = true AND (is_pinned IS FALSE OR pinned_at IS NULL) THEN NOW()
+             WHEN $2 = false THEN NULL
+             ELSE pinned_at
+           END,
            updated_at = NOW()
        WHERE id = $3 AND user_id = $4
-       RETURNING id, title, is_pinned, updated_at;`,
+       RETURNING id, title, is_pinned, pinned_at, updated_at;`,
       [title !== undefined ? title : null, is_pinned !== undefined ? is_pinned : null, sessionId, user.uid]
     );
 

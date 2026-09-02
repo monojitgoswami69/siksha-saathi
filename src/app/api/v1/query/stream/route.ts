@@ -23,6 +23,7 @@ export async function POST(req: NextRequest) {
       document_id: reqDocId,
       file_name: reqFileName,
       subject: reqSubject,
+      module: reqModule,
       history = [],
       top_k = 10,
     } = body;
@@ -62,6 +63,7 @@ export async function POST(req: NextRequest) {
         semester: studentSem && studentSem !== 'All' ? studentSem : undefined,
         section: studentSection && studentSection !== 'All' ? studentSection : undefined,
         subject: reqSubject && reqSubject !== 'All Subjects' ? reqSubject : undefined,
+        module: reqModule || undefined,
         fileName: reqFileName || undefined,
         documentId: reqDocId || undefined,
       },
@@ -140,11 +142,31 @@ export async function POST(req: NextRequest) {
       topChunkId: topChunk?.id,
     }).catch(() => null);
 
+    // Check if this is the first message of the session (title is 'New Chat' or no messages yet)
+    let isFirstMessage = !history || history.length === 0;
+    if (session_id) {
+      try {
+        const sessRes = await query(
+          'SELECT title, (SELECT COUNT(*)::int FROM chat_messages WHERE session_id = s.id) as msg_count FROM chat_sessions s WHERE s.id = $1;',
+          [session_id]
+        );
+        if (sessRes.rowCount && sessRes.rowCount > 0) {
+          const row = sessRes.rows[0];
+          if (row.title === 'New Chat' || row.msg_count <= 1) {
+            isFirstMessage = true;
+          }
+        }
+      } catch (e: any) {
+        console.error('Session check error:', e?.message);
+      }
+    }
+
     // Stream Socratic chat response
     const stream = await streamSocraticChat({
       userMessage: message,
       contextBlock: finalContextBlock,
       conversationHistory: history,
+      isFirstMessage,
     });
 
     const reader = stream.getReader();
@@ -157,9 +179,6 @@ export async function POST(req: NextRequest) {
 
     const customStream = new ReadableStream({
       async start(controller) {
-        controller.enqueue(
-          encoder.encode(`data: ${JSON.stringify({ sources, type: 'metadata' })}\n\n`)
-        );
 
         try {
           while (true) {
@@ -173,7 +192,8 @@ export async function POST(req: NextRequest) {
               if (line.startsWith('data: ')) {
                 const dataStr = line.slice(6).trim();
                 if (dataStr === '[DONE]') {
-                  controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
+                  // Do not forward [DONE] yet; session_name and metadata follow after this stream
+                  continue;
                 } else {
                   try {
                     const parsed = JSON.parse(dataStr);
@@ -187,71 +207,136 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          if (session_id && accumulatedResponse.trim()) {
-            query(
-              `INSERT INTO chat_messages (session_id, role, content, sources) VALUES ($1, 'assistant', $2, $3);`,
-              [session_id, accumulatedResponse.trim(), JSON.stringify(sources)]
-            ).catch((e) => console.error('Failed to save assistant chat message:', e.message));
+          // ---- Extract strictly the exact cited source(s) used in the answer ----
+          const citedOrdinals = new Set<number>();
+          const reDouble = /\[\[#?(\d+)\]\]/g;
+          let m: RegExpExecArray | null;
+          while ((m = reDouble.exec(accumulatedResponse)) !== null) {
+            citedOrdinals.add(parseInt(m[1], 10));
+          }
+          const reSingle = /(?:^|[\s(])\[#?(\d+)\]/g;
+          while ((m = reSingle.exec(accumulatedResponse)) !== null) {
+            citedOrdinals.add(parseInt(m[1], 10));
+          }
+          const reHash = /(?:^|[\s(])#(\d+)(?=[.,;:\s)]|$)/g;
+          while ((m = reHash.exec(accumulatedResponse)) !== null) {
+            citedOrdinals.add(parseInt(m[1], 10));
           }
 
-          // ---- Increment counters for EVERY cited material ----
-          // The LLM cites by ordinal [[#n]]; we deterministically map ordinals
-          // back to real chunk metadata (chunk_id, document_id, subject, scope)
-          // from the sources payload — never trusting the LLM with raw UUIDs.
-          if (queryLogId) {
+          const matchedSources: any[] = [];
+          for (const n of citedOrdinals) {
+            const s = sourcesByN.get(n);
+            if (s && s.chunk_id) {
+              matchedSources.push(s);
+            }
+          }
+
+          // Fallback: if no explicit citations were emitted, strictly take only the top 1 retrieved chunk that answered it
+          const finalExactSources =
+            matchedSources.length > 0
+              ? matchedSources
+              : sources.length > 0
+              ? [sources[0]]
+              : [];
+
+          // Deduplicate by document_id and page
+          const seenKeys = new Set<string>();
+          const deduplicatedSources: any[] = [];
+          for (const s of finalExactSources) {
+            const key = `${s.document_id || s.title}_${s.page}`;
+            if (!seenKeys.has(key)) {
+              seenKeys.add(key);
+              deduplicatedSources.push(s);
+            }
+          }
+
+          // ---- Check for SESSION_NAME from model or fallback for first message ----
+          let generatedSessionName: string | null = null;
+          const sessionNameMatch = /(?:<!--\s*SESSION_NAME:\s*|\[SESSION_NAME:\s*|SESSION_NAME:\s*)(.+?)(?:-->|\]|$)/i.exec(accumulatedResponse);
+          if (sessionNameMatch && sessionNameMatch[1]) {
+            generatedSessionName = sessionNameMatch[1].trim().replace(/^["']|["']$/g, '');
+          }
+
+          if (!generatedSessionName && isFirstMessage) {
+            const cleanMsg = message.trim().replace(/[?.,!]+$/, '').slice(0, 40).trim();
+            if (cleanMsg) {
+              generatedSessionName = cleanMsg.charAt(0).toUpperCase() + cleanMsg.slice(1);
+            }
+          }
+
+          // Strip any session name comment tag so it never appears in the student chat history
+          const cleanAssistantResponse = accumulatedResponse
+            .replace(/(?:<!--\s*SESSION_NAME:\s*|\[SESSION_NAME:\s*|SESSION_NAME:\s*)(.+?)(?:-->|\]|$)/gi, '')
+            .trim();
+
+          if (session_id && generatedSessionName) {
             try {
-              const citedOrdinals = new Set<number>();
-              const re = /\[\[#(\d+)\]\]/g;
-              let m: RegExpExecArray | null;
-              while ((m = re.exec(accumulatedResponse)) !== null) {
-                citedOrdinals.add(parseInt(m[1], 10));
-              }
+              await query(
+                'UPDATE chat_sessions SET title = $1, updated_at = NOW() WHERE id = $2;',
+                [generatedSessionName, session_id]
+              );
+            } catch (e: any) {
+              console.error('Failed to update session title in DB:', e.message);
+            }
 
-              const citedSources: any[] = [];
-              for (const n of citedOrdinals) {
-                const s = sourcesByN.get(n);
-                if (s && s.chunk_id) {
-                  citedSources.push(s);
-                }
-              }
+            try {
+              controller.enqueue(
+                encoder.encode(
+                  `data: ${JSON.stringify({ type: 'session_name', title: generatedSessionName, session_id })}\n\n`
+                )
+              );
+            } catch {}
+          }
 
-              // Fallback: if the LLM emitted no explicit tags, count the top
-              // retrieved chunk so the query is still attributed to a material.
-              if (citedSources.length === 0 && topChunk) {
-                citedSources.push(sources[0]);
-              }
+          // Emit exact sources so client displays only the real answer source(s)
+          controller.enqueue(
+            encoder.encode(`data: ${JSON.stringify({ sources: deduplicatedSources, type: 'metadata' })}\n\n`)
+          );
 
-              if (citedSources.length > 0) {
-                const values: string[] = [];
-                const params: any[] = [];
-                let p = 1;
-                for (const s of citedSources) {
-                  values.push(
-                    `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6})`
-                  );
-                  params.push(
-                    queryLogId,
-                    s.chunk_id,
-                    s.document_id,
-                    s.subject || 'General',
-                    s.stream || 'General',
-                    s.semester || 'General',
-                    s.section || 'General'
-                  );
-                  p += 7;
-                }
-                await query(
-                  `INSERT INTO query_citations
-                     (query_log_id, chunk_id, document_id, subject, stream, semester, section)
-                   VALUES ${values.join(',')};`,
-                  params
+          if (session_id && (cleanAssistantResponse || accumulatedResponse.trim())) {
+            try {
+              await query(
+                `INSERT INTO chat_messages (session_id, role, content, sources) VALUES ($1, 'assistant', $2, $3);`,
+                [session_id, cleanAssistantResponse || accumulatedResponse.trim(), JSON.stringify(deduplicatedSources)]
+              );
+            } catch (e: any) {
+              console.error('Failed to save assistant chat message:', e.message);
+            }
+          }
+
+          // ---- Increment counters for cited materials ----
+          if (queryLogId && deduplicatedSources.length > 0) {
+            try {
+              const values: string[] = [];
+              const params: any[] = [];
+              let p = 1;
+              for (const s of deduplicatedSources) {
+                values.push(
+                  `($${p},$${p + 1},$${p + 2},$${p + 3},$${p + 4},$${p + 5},$${p + 6})`
                 );
+                params.push(
+                  queryLogId,
+                  s.chunk_id,
+                  s.document_id,
+                  s.subject || 'General',
+                  s.stream || 'General',
+                  s.semester || 'General',
+                  s.section || 'General'
+                );
+                p += 7;
               }
+              await query(
+                `INSERT INTO query_citations
+                   (query_log_id, chunk_id, document_id, subject, stream, semester, section)
+                 VALUES ${values.join(',')};`,
+                params
+              );
             } catch (e: any) {
               console.error('Citation counter error:', e.message);
             }
           }
 
+          controller.enqueue(encoder.encode(`data: [DONE]\n\n`));
           controller.close();
         } catch (streamErr: any) {
           console.error('SSE Stream error:', streamErr);

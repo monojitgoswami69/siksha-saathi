@@ -42,7 +42,7 @@ Siksha Saathi runs as a **three-process local stack**:
 | **Embeddings** | `intfloat/multilingual-e5-small` (384-dim, local, ~6ms warm query) |
 | **PDF** | PyMuPDF (C library, ~10ms for 5MB PDF) |
 | **OCR** | pytesseract (eng+hin) |
-| **Storage** | Cloudflare R2 (S3) / Dropbox |
+| **Storage** | Cloudflare R2 (S3-compatible, zero-cost egress) |
 | **Auth** | `httpOnly` cookies, JWT (`jose`), `bcryptjs`, Google OAuth 2.0 |
 
 See [`architecture.md`](architecture.md) for detailed data flow diagrams and module breakdown.
@@ -83,7 +83,7 @@ siksha-saathi/
 │       ├── analyticsScope.ts     #   → role-based scoping
 │       ├── auth.ts               #   → JWT, OAuth, sessions
 │       ├── db.ts                 #   → PostgreSQL pool
-│       ├── storage.ts            #   → R2 / Dropbox
+│       ├── storage.ts            #   → Cloudflare R2
 │       └── audit.ts              #   → action logging
 │
 ├── embedding-service/            # FastAPI embedding microservice
@@ -101,13 +101,13 @@ siksha-saathi/
 │       ├── chunking.py           # Paragraph-aware splitting
 │       ├── embeddings.py         # HTTP client for embedding service
 │       ├── db.py                 # Async psycopg3 pool
-│       ├── storage.py            # R2/Dropbox download
+│       ├── storage.py            # R2 download
 │       ├── ocr.py                # pytesseract wrapper
 │       └── config.py             # Pydantic Settings
 │
 ├── db-scripts/                   # Database management scripts
 ├── drizzle/                      # Drizzle ORM migrations
-├── scripts/                      # Utility scripts (Dropbox token)
+├── scripts/                      # Utility scripts
 ├── docker-compose.yml            # Multi-container Docker Compose orchestration
 └── architecture.md               # Detailed architecture documentation
 ```
@@ -211,7 +211,7 @@ GEMINI_MODEL=gemini-3.5-flash-lite
 JWT_SECRET=...
 SEED_ADMIN_EMAIL=admin@sikshasaathi.in
 SEED_ADMIN_PASSWORD=admin123
-# R2 / Dropbox / Google OAuth ...
+# Cloudflare R2 / Google OAuth ...
 ```
 
 Embedding service (in `embedding-service/.env`):

@@ -50,6 +50,25 @@ export async function POST(req: NextRequest) {
 
     const row = res.rows[0];
 
+    // Mark persistent quiz as completed
+    if (quiz_id) {
+      try {
+        await query(
+          `UPDATE quizzes
+           SET status = 'completed',
+               score = $1,
+               percentage = $2,
+               selected_answers = $3,
+               completed_at = NOW(),
+               updated_at = NOW()
+           WHERE id = $4 AND user_id = $5;`,
+          [score, percentage, JSON.stringify(answers), quiz_id, user.uid]
+        );
+      } catch (err) {
+        console.warn('Could not update quizzes table status on submit:', err);
+      }
+    }
+
     return NextResponse.json({
       result_id: row.id,
       quiz_id: quiz_id || row.id,

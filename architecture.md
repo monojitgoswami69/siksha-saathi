@@ -61,7 +61,7 @@ The Next.js app does **NOT** load the embedding model. It makes an HTTP call to 
 | `analyticsScope.ts` | Role-based scoping (admin/hod/faculty/student) |
 | `auth.ts` | JWT cookies, Google OAuth, session management |
 | `db.ts` | PostgreSQL connection pool (NeonDB) |
-| `storage.ts` | Cloudflare R2 / Dropbox file storage |
+| `storage.ts` | Cloudflare R2 (S3-compatible) file storage |
 | `audit.ts` | Action logging |
 
 ---
@@ -123,7 +123,7 @@ A background worker that polls `ingestion_jobs`, downloads uploaded files, extra
 **Pipeline:**
 ```
 Poll ingestion_jobs (FOR UPDATE SKIP LOCKED)
-  → Download file from R2/Dropbox
+  → Download file from Cloudflare R2 / local storage
   → Extract text (PyMuPDF for PDF, python-docx, python-pptx, markdown)
   → OCR (pytesseract, eng+hin) for image-only pages
   → Paragraph-aware chunking (configurable size/overlap)
@@ -143,7 +143,7 @@ The worker does **NOT** load the embedding model. It calls `http://127.0.0.1:810
 | `chunking.py` | Paragraph-aware splitting with overlap |
 | `embeddings.py` | HTTP client for embedding service |
 | `db.py` | Async psycopg3 connection pool |
-| `storage.py` | R2/Dropbox download |
+| `storage.py` | Cloudflare R2 download |
 | `config.py` | Pydantic Settings |
 | `main.py` | Job polling loop, claim/process/complete |
 
@@ -281,7 +281,7 @@ Student types question
 ```
 Faculty uploads document
   → POST /api/v1/ingest
-  → File → R2/Dropbox, document row created (status=processing), job enqueued
+  → File → Cloudflare R2, document row created (status=processing), job enqueued
   → 202 response (instant)
 
 Worker picks up job (polling):

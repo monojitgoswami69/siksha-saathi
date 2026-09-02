@@ -1,12 +1,12 @@
 'use client';
 
 import React, { useState, useEffect, useRef } from 'react';
-import ReactMarkdown from 'react-markdown';
+import ReactMarkdown, { defaultUrlTransform } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { ChatMessage, DocumentInfo } from '@/types';
 import { api } from '@/lib/client/api';
 import { FilePreview } from '@/components/student/FilePreview';
-import { BookOpen, FileText, ExternalLink } from 'lucide-react';
+import { FileText, ExternalLink, Link } from 'lucide-react';
 
 interface ChatAreaProps {
   messages: ChatMessage[];
@@ -60,25 +60,6 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
     };
   }, [messages, isStreaming]);
 
-  const handleOpenSource = async (docId?: string, title?: string, page?: number) => {
-    if (!docId) return;
-    setPreviewDoc({
-      id: docId,
-      document_id: docId,
-      title: title || 'Course Document',
-      file_name: title || 'document.pdf',
-    } as DocumentInfo);
-    setPreviewPage(page);
-    setPreviewUrl(null);
-    setHighlightedChunk(null);
-
-    try {
-      const res = await api.documents.getPreviewUrl(docId);
-      setPreviewUrl(res.preview_url || null);
-    } catch {
-      setPreviewUrl(null);
-    }
-  };
 
   // Open a specific chunk by ordinal (from an inline [[#n]] citation).
   const handleOpenCitation = async (
@@ -89,11 +70,15 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
     if (!src) return;
     const docId = src.document_id;
     const chunkId = src.chunk_id;
+    const title = src.title || src.file_name || 'Course Document';
+    const fileName = src.file_name || (src.title?.endsWith('.pdf') ? src.title : `${src.title}.pdf`);
+
     setPreviewDoc({
       id: docId,
       document_id: docId,
-      title: src.title || src.file_name || 'Course Document',
-      file_name: src.file_name || src.title || 'document.pdf',
+      title,
+      file_name: fileName,
+      subject: src.subject,
     } as DocumentInfo);
     setPreviewPage(src.page);
     setPreviewUrl(null);
@@ -124,10 +109,112 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
     }
   };
 
-  // Convert [[#n]] citation tags into markdown links a custom renderer turns
-  // into clickable chips. cite://<n> hrefs are intercepted (never navigated).
-  const renderCitations = (content: string) =>
-    content.replace(/\[\[#(\d+)\]\]/g, (_, n) => `[#${n}](cite://${n})`);
+  const handleOpenSourceItem = async (src: any) => {
+    if (!src) return;
+    const docId = src.document_id || src.id;
+    const chunkId = src.chunk_id;
+    const title = src.title || src.file_name || 'Course Document';
+    const fileName = src.file_name || (src.title?.endsWith('.pdf') ? src.title : `${src.title}.pdf`);
+
+    setPreviewDoc({
+      id: docId,
+      document_id: docId,
+      title,
+      file_name: fileName,
+      subject: src.subject,
+    } as DocumentInfo);
+    setPreviewPage(src.page);
+    setPreviewUrl(null);
+    setHighlightedChunk(null);
+
+    if (docId && chunkId) {
+      try {
+        const res = await api.documents.getChunk(docId, chunkId);
+        setPreviewUrl(res.preview_url || null);
+        setHighlightedChunk({
+          text: res.chunk?.raw_content || '',
+          paragraph_id: res.chunk?.paragraph_id,
+          chunk_type: res.chunk?.chunk_type,
+          page: res.chunk?.page_start || src.page,
+        });
+      } catch {
+        try {
+          const r2 = await api.documents.getPreviewUrl(docId);
+          setPreviewUrl(r2.preview_url || null);
+        } catch {}
+      }
+    } else if (docId) {
+      try {
+        const r2 = await api.documents.getPreviewUrl(docId);
+        setPreviewUrl(r2.preview_url || null);
+      } catch {}
+    }
+  };
+
+  const getExactSources = (content: string, allSources: any[]): any[] => {
+    if (!allSources || allSources.length === 0) return [];
+
+    const ordinals = new Set<number>();
+    const re = /(?:\[cite\]\(cite:\/\/|\[\[#?|\[#?|#)(\d+)/g;
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(content)) !== null) {
+      ordinals.add(parseInt(m[1], 10));
+    }
+
+    let matched: any[] = [];
+    if (ordinals.size > 0) {
+      const byN = new Map<number, any>();
+      allSources.forEach((s: any, idx: number) => {
+        const n = typeof s === 'object' && s.n ? s.n : idx + 1;
+        byN.set(n, s);
+      });
+      for (const n of ordinals) {
+        if (byN.has(n)) {
+          matched.push(byN.get(n));
+        }
+      }
+    }
+
+    // Fallback: if no ordinal was explicitly cited, show top 1 source
+    if (matched.length === 0 && allSources.length > 0) {
+      matched = [allSources[0]];
+    }
+
+    // Deduplicate by document_id and page
+    const seen = new Set<string>();
+    const deduplicated: any[] = [];
+    for (const src of matched) {
+      const key = typeof src === 'object' ? `${src.document_id || src.title}_${src.page}` : src;
+      if (!seen.has(key)) {
+        seen.add(key);
+        deduplicated.push(src);
+      }
+    }
+
+    return deduplicated;
+  };
+
+  // Convert [[#n]], [[n]], [#n], and bare #n citation tags into clickable citation link chips
+  const renderCitations = (content: string) => {
+    if (!content) return '';
+    let res = content
+      // Clean any previously malformed #n(cite://n) from history
+      .replace(/#?(\d+)\(cite:\/\/\1\)/g, '[cite](cite://$1)')
+      // 1. [[#n]] or [[n]]
+      .replace(/\[\[#?(\d+)\]\]/g, '[cite](cite://$1)')
+      // 2. [#n] (not already cite://)
+      .replace(/\[#?(\d+)\](?!\(cite:\/\/)/g, '[cite](cite://$1)')
+      // 3. (#n) (in parentheses)
+      .replace(/\(#?(\d+)\)(?!\(cite:\/\/)/g, '([cite](cite://$1))')
+      // 4. bare #n preceded by space or start of line, followed by punctuation or space
+      .replace(/(?:^|(?<=[\s]))#(\d+)(?=[.,;:\s?!)]|$)(?!\(cite:\/\/)/g, '[cite](cite://$1)');
+
+    // Clean any stray whitespace before following punctuation so punctuation never wraps onto a new line
+    res = res.replace(/(\]\(cite:\/\/\d+\))\s+([.,;:?!])/g, '$1$2');
+
+    return res;
+  };
+
 
   if (messages.length === 0) {
     const firstName = userName ? userName.split(' ')[0] : 'Student';
@@ -159,7 +246,7 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
             const isEmpty = isBot && !msg.content;
             const previousRole = idx > 0 ? messages[idx - 1].role : null;
             const previousIsUser = previousRole === 'user';
-            const sources = msg.sources || [];
+            const exactSources = isBot ? getExactSources(msg.content, msg.sources || []) : [];
 
             return (
               <div key={idx} className="flex flex-col w-full">
@@ -235,10 +322,18 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
                             >
                               <ReactMarkdown
                                 remarkPlugins={[remarkGfm]}
+                                urlTransform={(url) =>
+                                  url.startsWith('cite://') ? url : defaultUrlTransform(url)
+                                }
                                 components={{
                                   a: ({ href, children }) => {
                                     if (href && href.startsWith('cite://')) {
                                       const n = parseInt(href.replace('cite://', ''), 10);
+                                      const src = msg.sources?.find((s: any) => s.n === n) || msg.sources?.[n - 1];
+                                      const tooltip = src
+                                        ? `${src.title || src.file_name || 'Course Document'}${src.page ? ` (Page ${src.page})` : ''}`
+                                        : `Source #${n}`;
+
                                       return (
                                         <button
                                           type="button"
@@ -246,10 +341,10 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
                                             e.preventDefault();
                                             handleOpenCitation(n, msg.sources);
                                           }}
-                                          className="inline-flex items-center gap-0.5 px-1.5 py-0.5 mx-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 align-middle cursor-pointer"
-                                          title={`Open source #${n}`}
+                                          className="inline-flex items-center justify-center w-5 h-5 mx-1 rounded-md bg-blue-50/90 hover:bg-blue-100 text-blue-600 hover:text-blue-700 border border-blue-200/90 hover:border-blue-300 transition-all cursor-pointer align-baseline relative -top-[1px] select-none shadow-2xs group"
+                                          title={tooltip}
                                         >
-                                          <FileText className="w-2.5 h-2.5" />#{n}
+                                          <Link className="w-3.5 h-3.5 text-blue-600 group-hover:text-blue-700 transition-colors" />
                                         </button>
                                       );
                                     }
@@ -268,37 +363,30 @@ export function ChatArea({ messages, isStreaming, userName, userEmail }: ChatAre
                               )}
                             </div>
 
-                            {/* Interactive Grounded Sources */}
-                            {sources.length > 0 && !isStreamingThis && (
-                              <div className="mt-4 pt-3 border-t border-slate-200/60">
-                                <div className="flex items-center gap-1.5 text-xs text-slate-400 font-semibold mb-2 uppercase tracking-wider">
-                                  <BookOpen className="w-3.5 h-3.5 text-indigo-500" />
-                                  <span>Verified Course Sources</span>
-                                </div>
-                                <div className="flex flex-wrap gap-2">
-                                  {sources.map((src: any, i: number) => {
-                                    const title = typeof src === 'string' ? src : src.title || src.file_name || 'Document';
-                                    const page = typeof src === 'object' ? src.page : undefined;
-                                    const docId = typeof src === 'object' ? src.document_id : undefined;
+                            {/* Directly show sources at end of message without separate indicator */}
+                            {exactSources.length > 0 && !isStreamingThis && (
+                              <div className="mt-3.5 pt-1 flex flex-wrap gap-2">
+                                {exactSources.map((src: any, i: number) => {
+                                  const title = typeof src === 'string' ? src : src.title || src.file_name || 'Document';
+                                  const page = typeof src === 'object' ? src.page : undefined;
 
-                                    return (
-                                      <button
-                                        key={i}
-                                        onClick={() => handleOpenSource(docId, title, page)}
-                                        className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-semibold bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-200 transition-all cursor-pointer shadow-xs"
-                                        title={`View "${title}" ${page ? `(Page ${page})` : ''}`}
-                                      >
-                                        <FileText className="w-3 h-3 text-indigo-500 flex-shrink-0" />
-                                        <span className="truncate max-w-[200px]">{title}</span>
-                                        {page && (
-                                          <span className="px-1 py-0.2 bg-indigo-200/80 text-indigo-900 rounded text-[10px] font-bold">
-                                            p. {page}
-                                          </span>
-                                        )}
-                                      </button>
-                                    );
-                                  })}
-                                </div>
+                                  return (
+                                    <button
+                                      key={i}
+                                      onClick={() => handleOpenSourceItem(src)}
+                                      className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium bg-slate-100/90 hover:bg-slate-200 text-slate-700 hover:text-slate-900 border border-slate-200 transition-all cursor-pointer shadow-2xs"
+                                      title={`View "${title}" ${page ? `(Page ${page})` : ''}`}
+                                    >
+                                      <FileText className="w-3.5 h-3.5 text-slate-500 shrink-0" />
+                                      <span className="truncate max-w-[220px]">{title}</span>
+                                      {page && (
+                                        <span className="px-1.5 py-0.2 bg-slate-200/90 text-slate-600 rounded text-[10px] font-semibold">
+                                          p. {page}
+                                        </span>
+                                      )}
+                                    </button>
+                                  );
+                                })}
                               </div>
                             )}
                           </>

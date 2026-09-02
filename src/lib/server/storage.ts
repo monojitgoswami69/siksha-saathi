@@ -1,6 +1,7 @@
 /**
- * Unified Cloud Storage Service
- * Supports Cloudflare R2 (Default & Recommended - 0$ Egress) with Dropbox Fallback.
+ * Cloudflare R2 Cloud Storage Service
+ * Cloudflare R2 (S3-compatible, zero-cost egress) is the singular cloud storage
+ * provider for Siksha Saathi, with local filesystem storage for offline development.
  */
 
 import {
@@ -10,17 +11,8 @@ import {
   DeleteObjectCommand,
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import {
-  uploadToDropbox,
-  getDropboxTemporaryLink,
-  deleteFromDropbox,
-} from './dropbox';
 
-export type StorageProvider = 'r2' | 'dropbox';
-
-// Active storage provider (Defaults to 'r2' if configured or specified)
-const ACTIVE_PROVIDER: StorageProvider =
-  (process.env.STORAGE_PROVIDER as StorageProvider) || 'r2';
+export type StorageProvider = 'r2' | 'local';
 
 // Cloudflare R2 Config
 const R2_ACCOUNT_ID = process.env.R2_ACCOUNT_ID || '';
@@ -54,6 +46,13 @@ function getR2Client(): S3Client | null {
   return r2Client;
 }
 
+// Active storage provider
+function getActiveProvider(): StorageProvider {
+  const envProvider = process.env.STORAGE_PROVIDER as StorageProvider;
+  if (envProvider === 'r2' || envProvider === 'local') return envProvider;
+  return getR2Client() ? 'r2' : 'local';
+}
+
 export interface UploadResult {
   provider: StorageProvider;
   fileKey: string;
@@ -62,7 +61,7 @@ export interface UploadResult {
 }
 
 /**
- * Upload a file to active storage (R2 preferred, Dropbox fallback)
+ * Upload a file to Cloudflare R2 (or local disk in offline dev)
  */
 export async function uploadStorageFile({
   filename,
@@ -77,10 +76,32 @@ export async function uploadStorageFile({
 }): Promise<UploadResult> {
   const cleanName = filename.replace(/[^a-zA-Z0-9._-]/g, '_');
   const fileKey = `${folder}/${Date.now()}_${cleanName}`;
+  const activeProvider = getActiveProvider();
 
+  // 1. Explicit local storage provider (Docker volume / local disk)
+  if (activeProvider === 'local') {
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const storageDir = process.env.LOCAL_STORAGE_PATH || path.join(process.cwd(), '.storage');
+      const localPath = path.join(storageDir, fileKey);
+      fs.mkdirSync(path.dirname(localPath), { recursive: true });
+      fs.writeFileSync(localPath, buffer);
+
+      return {
+        provider: 'local',
+        fileKey,
+        publicUrl: null,
+        size: buffer.length,
+      };
+    } catch (e: any) {
+      console.warn('Could not write local storage file:', e.message);
+    }
+  }
+
+  // 2. Cloudflare R2 Upload
   const client = getR2Client();
-
-  if (ACTIVE_PROVIDER === 'r2' && client) {
+  if (client) {
     try {
       const command = new PutObjectCommand({
         Bucket: R2_BUCKET_NAME,
@@ -102,39 +123,28 @@ export async function uploadStorageFile({
         size: buffer.length,
       };
     } catch (err: any) {
-      console.warn('Cloudflare R2 upload failed, falling back to Dropbox:', err.message);
+      console.warn('Cloudflare R2 upload failed, falling back to local disk:', err.message);
     }
   }
 
-  // Fallback to Dropbox if R2 is not configured or fails
+  // 3. Fallback to local disk if R2 is not configured or fails
   try {
-    const dropboxRes = await uploadToDropbox(cleanName, buffer);
-
-    return {
-      provider: 'dropbox',
-      fileKey: dropboxRes.path,
-      publicUrl: dropboxRes.sharedUrl,
-      size: dropboxRes.size,
-    };
-  } catch (dbxErr) {
-    // If both are mock / unconfigured in local dev, persist to local disk (.storage)
-    try {
-      const fs = await import('fs');
-      const path = await import('path');
-      const localPath = path.join(process.cwd(), '.storage', fileKey);
-      fs.mkdirSync(path.dirname(localPath), { recursive: true });
-      fs.writeFileSync(localPath, buffer);
-    } catch (e: any) {
-      console.warn('Could not write local storage file:', e.message);
-    }
-
-    return {
-      provider: 'local' as any,
-      fileKey,
-      publicUrl: null,
-      size: buffer.length,
-    };
+    const fs = await import('fs');
+    const path = await import('path');
+    const storageDir = process.env.LOCAL_STORAGE_PATH || path.join(process.cwd(), '.storage');
+    const localPath = path.join(storageDir, fileKey);
+    fs.mkdirSync(path.dirname(localPath), { recursive: true });
+    fs.writeFileSync(localPath, buffer);
+  } catch (e: any) {
+    console.warn('Could not write local storage fallback file:', e.message);
   }
+
+  return {
+    provider: 'local',
+    fileKey,
+    publicUrl: null,
+    size: buffer.length,
+  };
 }
 
 /**
@@ -149,7 +159,7 @@ export async function getStoragePreviewUrl({
   provider?: StorageProvider;
   expiresIn?: number;
 }): Promise<string> {
-  const currentProvider = provider || ACTIVE_PROVIDER;
+  const currentProvider = provider || getActiveProvider();
 
   if (currentProvider === 'r2') {
     if (R2_PUBLIC_DOMAIN) {
@@ -171,12 +181,6 @@ export async function getStoragePreviewUrl({
     }
   }
 
-  // Dropbox link fallback
-  try {
-    const link = await getDropboxTemporaryLink(fileKey);
-    if (link) return link;
-  } catch {}
-
   return '';
 }
 
@@ -194,7 +198,7 @@ export async function getStorageDownloadUrl({
   provider?: StorageProvider;
   expiresIn?: number;
 }): Promise<string> {
-  const currentProvider = provider || ACTIVE_PROVIDER;
+  const currentProvider = provider || getActiveProvider();
 
   if (currentProvider === 'r2') {
     const client = getR2Client();
@@ -213,17 +217,11 @@ export async function getStorageDownloadUrl({
     }
   }
 
-  // Dropbox link fallback
-  try {
-    const link = await getDropboxTemporaryLink(fileKey);
-    if (link) return link;
-  } catch {}
-
   return '';
 }
 
 /**
- * Delete a file from Cloudflare R2 or Dropbox
+ * Delete a file from Cloudflare R2 or local disk
  */
 export async function deleteStorageFile({
   fileKey,
@@ -232,7 +230,7 @@ export async function deleteStorageFile({
   fileKey: string;
   provider?: StorageProvider;
 }): Promise<boolean> {
-  const currentProvider = provider || ACTIVE_PROVIDER;
+  const currentProvider = provider || getActiveProvider();
 
   if (currentProvider === 'r2') {
     const client = getR2Client();
@@ -250,9 +248,15 @@ export async function deleteStorageFile({
     }
   }
 
-  // Dropbox delete
+  // Local storage file deletion
   try {
-    await deleteFromDropbox(fileKey);
+    const fs = await import('fs');
+    const path = await import('path');
+    const storageDir = process.env.LOCAL_STORAGE_PATH || path.join(process.cwd(), '.storage');
+    const localPath = path.join(storageDir, fileKey);
+    if (fs.existsSync(localPath)) {
+      fs.unlinkSync(localPath);
+    }
     return true;
   } catch {
     return false;

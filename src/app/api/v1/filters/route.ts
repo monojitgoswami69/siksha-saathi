@@ -2,29 +2,26 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
 
-let cachedFilters: any = null;
-let cachedFiltersFor: string | null = null; // cache key by user scope
-let cacheExpiry = 0;
+const filterCache = new Map<string, { data: any; expiry: number }>();
 const CACHE_TTL_MS = 60 * 1000; // 60 seconds
 
 export function invalidateFilterCache() {
-  cachedFilters = null;
-  cachedFiltersFor = null;
-  cacheExpiry = 0;
+  filterCache.clear();
 }
 
 export async function GET(req: NextRequest) {
   try {
     const user = await getAuthUser(req);
     // Cache key: differentiate student (scoped) vs admin (unscoped)
-    const cacheKey = user ? `${user.uid}:${user.role}` : 'anon';
+    const cacheKey = user ? `${user.uid}:${user.role}:${user.scope}` : 'anon';
 
     const now = Date.now();
-    if (cachedFilters && cachedFiltersFor === cacheKey && now < cacheExpiry) {
-      return NextResponse.json(cachedFilters, { headers: { 'X-Cache': 'HIT' } });
+    const cached = filterCache.get(cacheKey);
+    if (cached && now < cached.expiry) {
+      return NextResponse.json(cached.data, { headers: { 'X-Cache': 'HIT' } });
     }
 
-    // Parallel: fetch all filter data at once
+    // 1. Fetch base curriculum rows
     const [streamRes, semRes, subjRes, sectionRes, curricRes, curricSectionRes] = await Promise.all([
       query("SELECT DISTINCT stream FROM documents WHERE stream IS NOT NULL AND stream != '';"),
       query("SELECT DISTINCT semester FROM documents WHERE semester IS NOT NULL AND semester != '';"),
@@ -33,7 +30,6 @@ export async function GET(req: NextRequest) {
         "SELECT DISTINCT section FROM documents WHERE section IS NOT NULL AND section != '' UNION SELECT DISTINCT section FROM student_users WHERE section IS NOT NULL AND section != '';"
       ),
       query('SELECT stream, semester, subjects, sections FROM curriculum ORDER BY stream ASC, semester ASC;'),
-      // Also extract sections from curriculum.sections JSONB array (handles both string and object elements)
       query(`
         SELECT DISTINCT CASE 
           WHEN jsonb_typeof(x) = 'string' THEN x #>> '{}' 
@@ -89,15 +85,16 @@ export async function GET(req: NextRequest) {
         const { getDefaultCurriculumEntries } = await import('@/lib/server/defaultCurriculum');
         const defaultEntries = getDefaultCurriculumEntries();
         for (const e of defaultEntries) {
-          if (!curriculumMap[e.stream]) curriculumMap[e.stream] = {};
-          curriculumMap[e.stream][e.semester] = e.subjects;
+          const s = e.stream.toLowerCase();
+          if (!curriculumMap[s]) curriculumMap[s] = {};
+          curriculumMap[s][e.semester] = e.subjects;
 
-          if (!curriculumSections[e.stream]) curriculumSections[e.stream] = {};
-          curriculumSections[e.stream][e.semester] = e.sections;
+          if (!curriculumSections[s]) curriculumSections[s] = {};
+          curriculumSections[s][e.semester] = e.sections;
 
-          if (!streamSections[e.stream]) streamSections[e.stream] = [];
+          if (!streamSections[s]) streamSections[s] = [];
           e.sections.forEach((sec) => {
-            if (!streamSections[e.stream].includes(sec)) streamSections[e.stream].push(sec);
+            if (!streamSections[s].includes(sec)) streamSections[s].push(sec);
           });
         }
       } catch (err) {
@@ -105,41 +102,14 @@ export async function GET(req: NextRequest) {
       }
     }
 
-    const streams = Array.from(
-      new Set([
-        ...Object.keys(curriculumMap),
-        ...streamRes.rows.map((r) => r.stream.toLowerCase()),
-      ])
-    ).sort();
+    let responseData: any;
 
-    const semesters = Array.from(
-      new Set([
-        ...Object.values(curriculumMap).flatMap((m) => Object.keys(m)),
-        ...semRes.rows.map((r) => r.semester),
-      ])
-    ).sort((a, b) => parseInt(a) - parseInt(b));
+    // STUDENT SCOPING: A student can ONLY see subjects and configuration for their enrolled stream and semester!
+    if (user && (user.scope === 'student' || user.role === 'student')) {
+      let studentStream = 'cse';
+      let studentSem = '1';
+      let studentSection = '';
 
-    const allSubjects = Array.from(
-      new Set([
-        ...subjRes.rows.map((r) => r.subject),
-        ...Object.values(curriculumMap).flatMap((m) => Object.values(m).flat()),
-      ])
-    ).sort();
-
-    const sections = Array.from(
-      new Set([
-        ...sectionRes.rows.map((r) => r.section).filter(Boolean),
-        ...curricSectionRes.rows.map((r) => r.section).filter(Boolean),
-      ])
-    ).sort();
-
-    // Files: scope to student's stream/semester/section if student
-    let files: any[] = [];
-    let studentStream: string | undefined;
-    let studentSem: string | undefined;
-    let studentSection: string | undefined;
-
-    if (user && user.scope === 'student') {
       try {
         const profileRes = await query(
           'SELECT stream, sem, section FROM student_users WHERE id = $1;',
@@ -147,57 +117,122 @@ export async function GET(req: NextRequest) {
         );
         if (profileRes.rowCount && profileRes.rowCount > 0) {
           const p = profileRes.rows[0] as any;
-          studentStream = p.stream;
-          studentSem = p.sem;
-          studentSection = p.section;
+          studentStream = p.stream || 'cse';
+          studentSem = String(p.sem || '1');
+          studentSection = p.section || '';
         }
       } catch {}
+
+      const sStream = studentStream.toLowerCase();
+      const sSem = studentSem;
+      const cleanSem = sSem.replace(/^(?:sem|semester)\s*/i, '');
+
+      // Scoped files: ONLY documents for this student's stream, semester, and section
+      let filesSql = `SELECT id, file_name, title, subject, module, stream, semester, section FROM documents WHERE status = 'ready'`;
+      const filesParams: any[] = [sStream, sSem, cleanSem];
+      filesSql += ` AND (LOWER(stream) = LOWER($1) OR stream = 'General' OR stream IS NULL)`;
+      filesSql += ` AND (semester = $2 OR semester = $3 OR semester = 'General' OR semester IS NULL)`;
+      if (studentSection) {
+        filesSql += ` AND (LOWER(section) = LOWER($4) OR section = 'General' OR section IS NULL)`;
+        filesParams.push(studentSection);
+      }
+      filesSql += ` ORDER BY created_at DESC LIMIT 200;`;
+      const filesRes = await query(filesSql, filesParams);
+      const files = filesRes.rows.map((f) => ({
+        document_id: f.id,
+        file_name: f.file_name,
+        title: f.title,
+        subject: f.subject,
+        module: f.module,
+        stream: f.stream,
+        semester: f.semester,
+        section: f.section,
+      }));
+
+      // Scoped subjects: ONLY from student's curriculum + their available documents
+      const streamCurric = curriculumMap[sStream] || {};
+      const curricSubjects: string[] =
+        streamCurric[sSem] || streamCurric[cleanSem] || streamCurric[`sem ${cleanSem}`] || [];
+
+      const docSubjects = Array.from(new Set(files.map((f) => f.subject).filter(Boolean)));
+      const scopedSubjects = Array.from(new Set([...curricSubjects, ...docSubjects])).sort();
+
+      const allowedSecs =
+        curriculumSections[sStream]?.[cleanSem] ||
+        curriculumSections[sStream]?.[sSem] ||
+        streamSections[sStream] ||
+        (studentSection ? [studentSection] : []);
+
+      responseData = {
+        streams: [sStream.toUpperCase()],
+        semesters: [cleanSem],
+        sections: allowedSecs.map((s: string) => s.toUpperCase()),
+        streamSections: { [sStream]: allowedSecs },
+        curriculumSections: { [sStream]: { [cleanSem]: allowedSecs } },
+        subjects: scopedSubjects.length > 0 ? scopedSubjects : curricSubjects,
+        files,
+        curriculum: {
+          [sStream]: {
+            [cleanSem]: scopedSubjects.length > 0 ? scopedSubjects : curricSubjects,
+          },
+        },
+      };
+    } else {
+      // Unscoped (Admin / Faculty / Public)
+      const streams = Array.from(
+        new Set([
+          ...Object.keys(curriculumMap),
+          ...streamRes.rows.map((r) => r.stream.toLowerCase()),
+        ])
+      ).sort();
+
+      const semesters = Array.from(
+        new Set([
+          ...Object.values(curriculumMap).flatMap((m) => Object.keys(m)),
+          ...semRes.rows.map((r) => r.semester),
+        ])
+      ).sort((a, b) => parseInt(a) - parseInt(b));
+
+      const allSubjects = Array.from(
+        new Set([
+          ...subjRes.rows.map((r) => r.subject),
+          ...Object.values(curriculumMap).flatMap((m) => Object.values(m).flat()),
+        ])
+      ).sort();
+
+      const sections = Array.from(
+        new Set([
+          ...sectionRes.rows.map((r) => r.section).filter(Boolean),
+          ...curricSectionRes.rows.map((r) => r.section).filter(Boolean),
+        ])
+      ).sort();
+
+      let filesSql = `SELECT id, file_name, title, subject, module, stream, semester, section FROM documents WHERE status = 'ready' ORDER BY created_at DESC LIMIT 200;`;
+      const filesRes = await query(filesSql, []);
+      const files = filesRes.rows.map((f) => ({
+        document_id: f.id,
+        file_name: f.file_name,
+        title: f.title,
+        subject: f.subject,
+        module: f.module,
+        stream: f.stream,
+        semester: f.semester,
+        section: f.section,
+      }));
+
+      responseData = {
+        streams,
+        semesters,
+        sections,
+        streamSections,
+        curriculumSections,
+        subjects: allSubjects,
+        files,
+        curriculum: curriculumMap,
+      };
     }
 
-    let filesSql = `SELECT id, file_name, title, subject, stream, semester, section FROM documents WHERE status = 'ready'`;
-    const filesParams: any[] = [];
-    let fIdx = 1;
-    if (studentStream) {
-      filesSql += ` AND (stream = $${fIdx} OR stream = 'General' OR stream IS NULL)`;
-      filesParams.push(studentStream);
-      fIdx++;
-    }
-    if (studentSem) {
-      filesSql += ` AND (semester = $${fIdx} OR semester = 'General' OR semester IS NULL)`;
-      filesParams.push(studentSem);
-      fIdx++;
-    }
-    if (studentSection) {
-      filesSql += ` AND (section = $${fIdx} OR section = 'General' OR section IS NULL)`;
-      filesParams.push(studentSection);
-      fIdx++;
-    }
-    filesSql += ` ORDER BY created_at DESC LIMIT 200;`;
-    const filesRes = await query(filesSql, filesParams);
-    files = filesRes.rows.map((f) => ({
-      document_id: f.id,
-      file_name: f.file_name,
-      title: f.title,
-      subject: f.subject,
-      stream: f.stream,
-      semester: f.semester,
-      section: f.section,
-    }));
-
-    const responseData = {
-      streams,
-      semesters,
-      sections,
-      streamSections,
-      curriculumSections,
-      subjects: allSubjects,
-      files,
-      curriculum: curriculumMap,
-    };
-
-    cachedFilters = responseData;
-    cachedFiltersFor = cacheKey;
-    cacheExpiry = now + CACHE_TTL_MS;
+    filterCache.set(cacheKey, { data: responseData, expiry: now + CACHE_TTL_MS });
 
     return NextResponse.json(responseData, { headers: { 'X-Cache': 'MISS' } });
   } catch (err: any) {

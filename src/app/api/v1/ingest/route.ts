@@ -178,7 +178,7 @@ export async function POST(req: NextRequest) {
     // By now fileBuffer is guaranteed (we returned 400 above if both were empty).
     const finalBuffer: Buffer = fileBuffer as Buffer;
 
-    // 1. Upload original asset to storage (R2 / Dropbox)
+    // 1. Upload original asset to storage (Cloudflare R2)
     let storageProvider = 'local';
     let fileKey: string | null = null;
     let previewUrl: string | null = null;

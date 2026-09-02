@@ -1,22 +1,24 @@
 """
-Storage download — R2 (S3-compatible) and Dropbox.
+Storage download — Cloudflare R2 (S3-compatible) and local filesystem.
 """
 from __future__ import annotations
 
 import logging
+import os
+from pathlib import Path
 from typing import Optional
-
-import httpx
 
 logger = logging.getLogger(__name__)
 
 
 async def download_file(file_key: str, provider: str = "r2") -> Optional[bytes]:
-    """Download a file from storage by key + provider."""
+    """Download a file from Cloudflare R2 or local storage."""
     from .config import get_settings
     settings = get_settings()
 
-    # R2 / S3
+    clean_key = file_key.lstrip("/")
+
+    # 1. Cloudflare R2 (S3-compatible)
     if provider in ("r2", "") and settings.r2_access_key_id and not settings.r2_access_key_id.startswith("dummy"):
         try:
             import boto3
@@ -27,53 +29,27 @@ async def download_file(file_key: str, provider: str = "r2") -> Optional[bytes]:
                 aws_secret_access_key=settings.r2_secret_access_key,
                 region_name="auto",
             )
-            response = s3.get_object(Bucket=settings.r2_bucket_name, Key=file_key)
+            response = s3.get_object(Bucket=settings.r2_bucket_name, Key=clean_key)
             return response["Body"].read()
         except Exception as e:
-            logger.error("R2 download error for %s: %s", file_key, e)
+            logger.warning("R2 download error for %s: %s (checking local storage fallback)", clean_key, e)
 
-    # Dropbox fallback
-    if provider == "dropbox" or file_key.startswith("/"):
-        try:
-            # Get temporary link via Dropbox API
-            async with httpx.AsyncClient() as client:
-                token_resp = await client.post(
-                    "https://api.dropboxapi.com/oauth2/token",
-                    data={
-                        "grant_type": "refresh_token",
-                        "refresh_token": settings.dropbox_refresh_token,
-                        "client_id": settings.dropbox_app_key,
-                        "client_secret": settings.dropbox_app_secret,
-                    },
-                )
-                if token_resp.status_code != 200:
-                    logger.error("Dropbox token refresh failed")
-                    return None
-
-                access_token = token_resp.json()["access_token"]
-                link_resp = await client.post(
-                    "https://api.dropboxapi.com/2/files/get_temporary_link",
-                    headers={"Authorization": f"Bearer {access_token}"},
-                    json={"path": file_key},
-                )
-                if link_resp.status_code != 200:
-                    return None
-
-                link = link_resp.json()["link"]
-                file_resp = await client.get(link)
-                if file_resp.status_code == 200:
-                    return file_resp.content
-        except Exception as e:
-            logger.error("Dropbox download error: %s", e)
-
-    # Local filesystem fallback (.storage/)
-    from pathlib import Path
+    # 2. Local filesystem storage (.storage/ or LOCAL_STORAGE_PATH)
+    local_dir = os.environ.get("LOCAL_STORAGE_PATH", "")
+    candidates = []
+    if local_dir:
+        candidates.append(Path(local_dir) / clean_key)
+        candidates.append(Path(local_dir) / Path(clean_key).name)
     for base in [Path.cwd(), Path.cwd().parent, Path(__file__).parent.parent.parent]:
-        candidate = base / ".storage" / file_key
+        candidates.append(base / ".storage" / clean_key)
+        candidates.append(base / ".storage" / Path(clean_key).name)
+
+    for candidate in candidates:
         if candidate.exists() and candidate.is_file():
             try:
                 return candidate.read_bytes()
             except Exception as e:
                 logger.error("Error reading local storage file %s: %s", candidate, e)
 
+    logger.error("Could not find file in R2 or local storage: %s", file_key)
     return None

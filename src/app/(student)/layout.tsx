@@ -1,12 +1,14 @@
 'use client';
 
 import React, { useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, usePathname } from 'next/navigation';
 import { useStudentAuth } from '@/context/StudentAuthContext';
 import SideNavBar from '@/components/student/layout/SideNavBar';
 
 export default function StudentLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
+  const pathname = usePathname();
+  const isQuizMode = pathname?.startsWith('/exam/quiz');
   const { isAuthenticated, isLoading } = useStudentAuth();
 
   useEffect(() => {
@@ -29,8 +31,8 @@ export default function StudentLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="flex h-screen w-full bg-slate-50 overflow-hidden">
-      <SideNavBar />
-      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative">
+      {!isQuizMode && <SideNavBar />}
+      <main className="flex-1 flex flex-col min-w-0 h-full overflow-hidden relative bg-slate-50">
         {children}
       </main>
     </div>

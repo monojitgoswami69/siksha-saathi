@@ -162,8 +162,6 @@ async function initSchema() {
         storage_provider VARCHAR(50) DEFAULT 'r2',
         file_key VARCHAR(500),
         preview_url VARCHAR(1000),
-        dropbox_path VARCHAR(500),
-        dropbox_shared_link VARCHAR(500),
         stream VARCHAR(100),
         semester VARCHAR(20),
         section VARCHAR(50),

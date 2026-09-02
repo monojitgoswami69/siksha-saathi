@@ -123,8 +123,14 @@ export const api = {
       }),
     submit: (data: any) =>
       request('/quiz/submit', { method: 'POST', body: JSON.stringify(data) }),
-    history: (): Promise<{ quiz_history: QuizHistoryItem[]; total_quizzes: number; average_percentage: number }> =>
+    history: (): Promise<{ quiz_history: QuizHistoryItem[]; active_quizzes?: any[]; total_quizzes: number; average_percentage: number }> =>
       request('/quiz/history', { method: 'GET' }),
+    get: (quizId: string): Promise<any> =>
+      request(`/quiz/${quizId}`, { method: 'GET' }),
+    updateProgress: (quizId: string, data: { selected_answers?: Record<number, string>; review_answers?: Record<number, boolean>; status?: string }): Promise<any> =>
+      request(`/quiz/${quizId}`, { method: 'PATCH', body: JSON.stringify(data) }),
+    delete: (quizId: string): Promise<any> =>
+      request(`/quiz/${quizId}`, { method: 'DELETE' }),
   },
 
   documents: {
@@ -150,23 +156,38 @@ export const api = {
       request(`/documents/${docId}`, { method: 'DELETE' }, 'admin'),
     update: (docId: string, data: any) =>
       request(`/documents/${docId}`, { method: 'PATCH', body: JSON.stringify(data) }, 'admin'),
-    getPreviewUrl: (docId: string): Promise<{ preview_url: string; title: string }> =>
+    getPreviewUrl: (docId: string): Promise<{ preview_url: string; title: string; file_name?: string; document_id?: string; provider?: string }> =>
       request(`/documents/${docId}/preview`, { method: 'GET' }),
     getDownloadUrl: (docId: string): Promise<{ download_url: string; title: string }> =>
       request(`/documents/${docId}/download`, { method: 'GET' }),
     download: async (docId: string, filename: string) => {
+      // First try direct streaming endpoint
+      const fileRes = await fetch(`/api/v1/documents/${docId}/file?download=1`, {
+        credentials: 'same-origin',
+      });
+      if (fileRes.ok && fileRes.headers.get('content-type')?.includes('application/')) {
+        const blob = await fileRes.blob();
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        window.URL.revokeObjectURL(url);
+        return;
+      }
+
+      // Fallback: check json download endpoint
       const res = await fetch(`/api/v1/documents/${docId}/download`, {
         credentials: 'same-origin',
       });
-      const blob = await res.blob();
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      document.body.appendChild(a);
-      a.click();
-      a.remove();
-      window.URL.revokeObjectURL(url);
+      if (res.ok) {
+        const data = await res.json();
+        if (data.download_url) {
+          window.open(data.download_url, '_blank');
+        }
+      }
     },
     getContent: (docId: string) =>
       request(`/documents/${docId}/content`, { method: 'GET' }, 'admin'),

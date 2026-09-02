@@ -76,9 +76,9 @@ export default function KnowledgeBasePage() {
     setPreviewUrl(null);
     try {
       const res = await api.documents.getPreviewUrl(doc.document_id || doc.id);
-      setPreviewUrl(res.preview_url || doc.dropbox_shared_link || null);
+      setPreviewUrl(res.preview_url || null);
     } catch {
-      setPreviewUrl(doc.dropbox_shared_link || null);
+      setPreviewUrl(null);
     }
   };
 

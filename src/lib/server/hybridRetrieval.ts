@@ -16,6 +16,7 @@ export interface RetrievalScope {
   semester?: string;
   section?: string;
   subject?: string;
+  module?: string;
   fileName?: string;
   documentId?: string;
 }
@@ -189,19 +190,19 @@ function buildScopeClause(scope: RetrievalScope, paramOffset: number = 0) {
   let pIdx = paramOffset + 1;
 
   if (scope.stream) {
-    where += ` AND (c.stream = $${pIdx} OR c.stream = 'General' OR c.stream IS NULL)`;
+    where += ` AND (LOWER(c.stream) = LOWER($${pIdx}) OR c.stream = 'General' OR c.stream IS NULL)`;
     params.push(scope.stream);
     pIdx++;
   }
-  if (scope.semester) {
-    const rawSem = scope.semester.trim();
-    const semNum = rawSem.replace(/^sem\s*/i, '');
+  if (scope.semester !== undefined && scope.semester !== null && scope.semester !== '') {
+    const rawSem = String(scope.semester).trim();
+    const semNum = rawSem.replace(/^(?:sem|semester)\s*/i, '');
     where += ` AND (c.semester = $${pIdx} OR c.semester = $${pIdx + 1} OR c.semester = 'General' OR c.semester IS NULL)`;
     params.push(rawSem, semNum);
     pIdx += 2;
   }
   if (scope.section) {
-    where += ` AND (c.section = $${pIdx} OR c.section = 'General' OR c.section IS NULL)`;
+    where += ` AND (LOWER(c.section) = LOWER($${pIdx}) OR c.section = 'General' OR c.section IS NULL)`;
     params.push(scope.section);
     pIdx++;
   }
@@ -214,6 +215,11 @@ function buildScopeClause(scope: RetrievalScope, paramOffset: number = 0) {
     where += ` AND LOWER(c.file_name) = LOWER($${pIdx})`;
     params.push(scope.fileName);
     pIdx++;
+  }
+  if (scope.module) {
+    where += ` AND (LOWER(c.module) = LOWER($${pIdx}) OR LOWER(c.file_name) ILIKE $${pIdx + 1})`;
+    params.push(scope.module, `%${scope.module}%`);
+    pIdx += 2;
   }
   if (scope.documentId) {
     where += ` AND c.document_id = $${pIdx}`;

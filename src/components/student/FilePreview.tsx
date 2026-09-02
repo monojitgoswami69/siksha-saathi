@@ -28,8 +28,21 @@ export function FilePreview({
 }: FilePreviewProps) {
   if (!document) return null;
 
-  const isPdf = document.file_name?.toLowerCase().endsWith('.pdf') || document.mime_type?.includes('pdf');
-  const isImage = /\.(jpg|jpeg|png|webp|gif)$/i.test(document.file_name || '') || document.mime_type?.includes('image');
+  const isImage =
+    /\.(jpg|jpeg|png|webp|gif)$/i.test(document.file_name || '') ||
+    document.mime_type?.includes('image');
+
+  const isLocalOrInternal =
+    previewUrl?.startsWith('/') ||
+    previewUrl?.includes('localhost') ||
+    previewUrl?.includes('127.0.0.1');
+
+  const isPdf =
+    document.file_name?.toLowerCase().endsWith('.pdf') ||
+    document.title?.toLowerCase().endsWith('.pdf') ||
+    document.mime_type?.includes('pdf') ||
+    previewUrl?.toLowerCase().includes('.pdf') ||
+    isLocalOrInternal;
 
   const pdfUrlWithPage = previewUrl
     ? `${previewUrl}${initialPage ? `#page=${initialPage}` : '#toolbar=0'}`
@@ -122,17 +135,23 @@ export function FilePreview({
                 alt="Document Preview"
                 className="max-h-full max-w-full object-contain rounded-xl shadow"
               />
-            ) : (
+            ) : previewUrl.startsWith('http') && !isLocalOrInternal ? (
               <iframe
                 src={`https://docs.google.com/viewer?url=${encodeURIComponent(previewUrl)}&embedded=true`}
                 className="w-full h-full rounded-xl border border-slate-200 bg-white"
                 title="Document Viewer"
               />
+            ) : (
+              <iframe
+                src={pdfUrlWithPage}
+                className="w-full h-full rounded-xl border border-slate-200 bg-white"
+                title="PDF Preview"
+              />
             )
           ) : (
             <div className="text-center p-8">
               <div className="w-10 h-10 border-3 border-indigo-600 border-t-transparent rounded-full animate-spin mx-auto mb-3"></div>
-              <p className="text-sm font-medium text-slate-600">Loading document preview from Dropbox...</p>
+              <p className="text-sm font-medium text-slate-600">Loading document preview...</p>
             </div>
           )}
         </div>

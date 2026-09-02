@@ -46,6 +46,13 @@ logger = logging.getLogger("embedding-service")
 logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
 logging.getLogger("transformers").setLevel(logging.WARNING)
 
+# Suppress repetitive Docker healthcheck pings from access log
+class EndpointFilter(logging.Filter):
+    def filter(self, record: logging.LogRecord) -> bool:
+        return record.getMessage().find("/health") == -1
+
+logging.getLogger("uvicorn.access").addFilter(EndpointFilter())
+
 settings = Settings()
 cache = EmbeddingCache(max_size=settings.cache_max_size)
 _total_requests = 0

@@ -30,6 +30,11 @@ services:
     restart: unless-stopped
     ports:
       - "8100:8100"
+    env_file:
+      - path: .env.local
+        required: false
+      - path: .env
+        required: false
     environment:
       EMBEDDING_HOST: 0.0.0.0
       EMBEDDING_PORT: 8100
@@ -39,7 +44,7 @@ services:
       - model_cache:/root/.cache/huggingface
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8100/health || exit 1"]
-      interval: 2s
+      interval: 10s
       timeout: 2s
       retries: 20
       start_period: 4s
@@ -53,12 +58,16 @@ services:
       dockerfile: Dockerfile
     container_name: siksha-ingestion-worker
     restart: unless-stopped
+    env_file:
+      - path: .env.local
+        required: false
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/siksha_saathi
       LOCAL_EMBEDDING_URL: http://embedding-service:8100
       EMBEDDING_SERVICE_URL: http://embedding-service:8100
       LOCAL_STORAGE_PATH: /app/.storage
-      STORAGE_PROVIDER: local
     volumes:
       - storage_data:/app/.storage
       - model_cache:/root/.cache/huggingface
@@ -79,11 +88,15 @@ services:
     restart: unless-stopped
     ports:
       - "3000:3000"
+    env_file:
+      - path: .env.local
+        required: false
+      - path: .env
+        required: false
     environment:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/siksha_saathi
       LOCAL_EMBEDDING_URL: http://embedding-service:8100
       LOCAL_STORAGE_PATH: /app/.storage
-      STORAGE_PROVIDER: local
       NODE_ENV: development
     volumes:
       - storage_data:/app/.storage

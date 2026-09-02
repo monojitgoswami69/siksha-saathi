@@ -14,12 +14,13 @@
   --color-on-surface: #2b3437;
   --color-on-surface-variant: #586064;
 
-  --font-headline: "Nova Flat", sans-serif;
-  --font-body: "Inclusive Sans", sans-serif;
-  --font-button: "Jura", sans-serif;
-  --font-chat: "JetBrains Mono", monospace;
+  --font-headline: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-body: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-sans: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-button: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-chat: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-mono: "JetBrains Mono", monospace;
-  --font-display: "Manrope", sans-serif;
+  --font-display: "Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
 }
 
 @layer base {

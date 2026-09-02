@@ -87,14 +87,7 @@ export default function AddTextPage() {
           (!section || section === 'General' || a.section.toLowerCase() === section.toLowerCase())
         )
         .map((a) => a.subject)))
-    : (curriculum[stream]?.[semester] || [
-        'Data Structures',
-        'Operating Systems',
-        'Algorithms',
-        'Database Management Systems',
-        'Computer Networks',
-        'Software Engineering',
-      ]);
+    : (curriculum[stream.toLowerCase()]?.[semester] || curriculum[stream]?.[semester] || []);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();

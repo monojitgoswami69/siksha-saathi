@@ -30,9 +30,10 @@ function ChatContent() {
       <ChatInput
         onSendMessage={(text, filter) =>
           handleSendMessage(text, {
-            document_id: documentId || filter?.document_id,
+            document_id: filter?.document_id,
             subject: filter?.subject,
             file_name: filter?.file_name,
+            module: filter?.module,
           })
         }
         isStreaming={isStreaming}

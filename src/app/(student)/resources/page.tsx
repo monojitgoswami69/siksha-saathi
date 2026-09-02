@@ -144,75 +144,89 @@ export default function ResourcesPage() {
   }, [processedDocs]);
 
   return (
-    <div className="flex-1 overflow-y-auto px-[34px] md:px-[38px] py-4 scrollbar-hide font-body">
-      <div className="max-w-full mx-auto space-y-8">
+    <div className="flex-1 overflow-y-auto px-[34px] md:px-[38px] py-6 scrollbar-hide font-body bg-slate-50">
+      <div className="max-w-full mx-auto space-y-6">
         {/* Header Section */}
-        <header className="space-y-4">
-          <h1 className="text-3xl font-extrabold text-slate-800 font-headline">Study Resources</h1>
+        <header className="space-y-1.5 pb-1">
+          <div className="flex items-center justify-between">
+            <h1 className="text-2xl md:text-3xl font-extrabold text-slate-900 font-headline tracking-tight">
+              Study Resources
+            </h1>
+            <span className="text-xs font-semibold text-slate-500 bg-white px-3 py-1 rounded-full border border-slate-200/80 shadow-[0_1px_2px_rgba(0,0,0,0.02)]">
+              {processedDocs.length} {processedDocs.length === 1 ? 'Resource' : 'Resources'}
+            </span>
+          </div>
           <p className="text-slate-500 text-sm max-w-2xl leading-relaxed">
             Access all your uploaded study materials securely. Organize, preview, and review your notes,
             grouped elegantly by subject for your convenience.
           </p>
         </header>
 
-        {/* Controls Bar (Sticky) */}
-        <div className="sticky top-[-16px] z-20 bg-[#f1f5f9] pt-4 pb-4 -mx-1 px-1">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-white p-4 rounded-2xl shadow-[0_4px_20px_rgba(0,0,0,0.03)] border border-slate-100">
-            {/* Search */}
-            <div className="relative max-w-sm w-full">
-              <span className="material-symbols-outlined absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">
-                search
-              </span>
-              <input
-                type="text"
-                placeholder="Search resources..."
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 text-slate-700 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0d47a1]/20 focus:border-[#0d47a1] transition-all placeholder:text-slate-400 font-body"
-              />
-            </div>
+        {/* Clean Controls directly on the page without card container or background hues */}
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-1">
+          {/* Search Box directly on page */}
+          <div className="relative max-w-md w-full">
+            <span className="material-symbols-outlined absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 text-lg pointer-events-none">
+              search
+            </span>
+            <input
+              type="text"
+              placeholder="Search resources..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="w-full pl-10 pr-9 py-2 bg-white border border-slate-200/90 text-slate-800 text-sm rounded-xl focus:outline-none focus:ring-2 focus:ring-[#0d47a1]/15 focus:border-[#0d47a1] transition-all placeholder:text-slate-400 font-medium shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+            />
+            {searchQuery && (
+              <button
+                type="button"
+                onClick={() => setSearchQuery('')}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full cursor-pointer"
+                title="Clear search"
+              >
+                <span className="material-symbols-outlined text-sm">close</span>
+              </button>
+            )}
+          </div>
 
-            {/* Filters & View Toggles */}
-            <div className="flex items-center gap-3 self-end md:self-auto">
-              {/* Sort Dropdown */}
-              <Dropdown
-                value={sortOption}
-                onChange={(val) => setSortOption(val as SortOption)}
-                options={[
-                  { label: 'Name', value: 'name' },
-                  { label: 'Date Uploaded', value: 'date' },
-                  { label: 'Size (Chunks)', value: 'size' },
-                ]}
-                className="w-48"
-              />
+          {/* Sort + View Mode directly on page */}
+          <div className="flex items-center gap-2.5 self-end sm:self-auto">
+            <Dropdown
+              value={sortOption}
+              onChange={(val) => setSortOption(val as SortOption)}
+              options={[
+                { label: 'Sort: Name', value: 'name' },
+                { label: 'Sort: Date', value: 'date' },
+                { label: 'Sort: Chunks', value: 'size' },
+              ]}
+              className="w-40"
+              buttonClassName="!py-2 !text-xs !bg-white hover:!bg-slate-50/80 !border-slate-200/90 !shadow-[0_1px_2px_rgba(0,0,0,0.03)]"
+            />
 
-              {/* View Mode */}
-              <div className="flex items-center bg-slate-50 rounded-xl border border-slate-200 p-1">
-                <button
-                  type="button"
-                  onClick={() => setViewMode('grid')}
-                  className={`p-1.5 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                    viewMode === 'grid'
-                      ? 'bg-white text-[#0d47a1] shadow-sm'
-                      : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                  title="Grid View"
-                >
-                  <span className="material-symbols-outlined text-[18px]">grid_view</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setViewMode('list')}
-                  className={`p-1.5 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
-                    viewMode === 'list'
-                      ? 'bg-white text-[#0d47a1] shadow-sm'
-                      : 'text-slate-400 hover:text-slate-600'
-                  }`}
-                  title="List View"
-                >
-                  <span className="material-symbols-outlined text-[18px]">view_list</span>
-                </button>
-              </div>
+            <div className="flex items-center bg-white rounded-xl border border-slate-200/90 p-0.5 shadow-[0_1px_2px_rgba(0,0,0,0.03)]">
+              <button
+                type="button"
+                onClick={() => setViewMode('grid')}
+                className={`p-1.5 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                  viewMode === 'grid'
+                    ? 'bg-blue-50 text-[#0d47a1] font-bold'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title="Grid View"
+              >
+                <span className="material-symbols-outlined text-[18px]">grid_view</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode('list')}
+                className={`p-1.5 rounded-lg flex items-center justify-center transition-all cursor-pointer ${
+                  viewMode === 'list'
+                    ? 'bg-blue-50 text-[#0d47a1] font-bold'
+                    : 'text-slate-400 hover:text-slate-600'
+                }`}
+                title="List View"
+              >
+                <span className="material-symbols-outlined text-[18px]">view_list</span>
+              </button>
             </div>
           </div>
         </div>
@@ -246,16 +260,20 @@ export default function ResourcesPage() {
             </p>
           </div>
         ) : (
-          <div className="space-y-10 pb-20">
+          <div className="space-y-8 pb-16">
             {Object.entries(groupedDocs).map(([subject, docs]) => (
               <section key={subject} className="space-y-4">
-                <h2 className="text-xl font-bold text-slate-800 font-headline border-b border-slate-200 pb-2 flex items-center gap-2">
-                  <span className="material-symbols-outlined text-[#0d47a1] text-xl">folder</span>
-                  {subject}
-                  <span className="ml-2 bg-slate-100 text-slate-500 text-xs py-0.5 px-2.5 rounded-full font-bold">
+                <div className="flex items-center gap-2.5 pt-2 border-b border-slate-100 pb-2.5">
+                  <span className="material-symbols-outlined text-[#0d47a1] text-[20px]">
+                    folder_open
+                  </span>
+                  <h2 className="text-base font-bold text-slate-800 font-headline tracking-tight">
+                    {subject}
+                  </h2>
+                  <span className="text-[11px] font-semibold text-slate-400 bg-slate-100 px-2 py-0.5 rounded-full">
                     {docs.length}
                   </span>
-                </h2>
+                </div>
 
                 {viewMode === 'grid' ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
@@ -263,29 +281,37 @@ export default function ResourcesPage() {
                       <div
                         key={doc.document_id}
                         onClick={() => setSelectedPreviewDoc(doc)}
-                        className="bg-white border border-slate-100 rounded-2xl p-5 shadow-[0_4px_20px_rgba(0,0,0,0.03)] hover:shadow-[0_8px_30px_rgba(13,71,161,0.08)] hover:-translate-y-1 transition-all duration-300 flex flex-col group relative overflow-hidden cursor-pointer"
+                        className="bg-white border border-slate-200/80 hover:border-[#0d47a1]/40 rounded-2xl p-5 shadow-[0_1px_3px_rgba(0,0,0,0.02)] hover:shadow-[0_8px_20px_rgba(13,71,161,0.06)] hover:-translate-y-0.5 transition-all duration-200 flex flex-col group relative overflow-hidden cursor-pointer"
                       >
-                        <div className="absolute top-0 right-0 w-[50px] h-[50px] bg-blue-50 rounded-bl-full -z-10 opacity-0 group-hover:opacity-100 transition-opacity duration-300"></div>
-                        <button
-                          type="button"
-                          className="absolute top-1 right-1 p-1 text-slate-400 hover:text-[#0d47a1] opacity-0 group-hover:opacity-100 transition-all duration-300 z-10 cursor-pointer hover:scale-125 active:scale-90 group-hover:translate-x-0 translate-x-2 disabled:opacity-50"
-                          title="Download resource"
-                          disabled={downloadingId === doc.document_id}
-                          onClick={(e) => {
-                            e.preventDefault();
-                            e.stopPropagation();
-                            handleDownload(doc);
-                          }}
-                        >
-                          <span className="material-symbols-outlined text-[18px]">
-                            {downloadingId === doc.document_id ? 'hourglass_top' : 'download'}
-                          </span>
-                        </button>
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="w-10 h-10 rounded-xl bg-blue-50/70 border border-blue-100/80 flex items-center justify-center text-[#0d47a1] shrink-0 group-hover:scale-105 transition-transform">
+                            <span className="material-symbols-outlined text-[20px]">
+                              {getFileType(doc.file_name || doc.title) === 'PDF'
+                                ? 'picture_as_pdf'
+                                : 'description'}
+                            </span>
+                          </div>
+                          <button
+                            type="button"
+                            className="p-1.5 text-slate-400 hover:text-[#0d47a1] hover:bg-blue-50/50 rounded-lg transition-all cursor-pointer disabled:opacity-50"
+                            title="Download resource"
+                            disabled={downloadingId === doc.document_id}
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              handleDownload(doc);
+                            }}
+                          >
+                            <span className="material-symbols-outlined text-[18px]">
+                              {downloadingId === doc.document_id ? 'hourglass_top' : 'download'}
+                            </span>
+                          </button>
+                        </div>
 
-                        <h3 className="text-sm font-bold text-slate-800 mb-1 line-clamp-2 leading-snug group-hover:text-[#0d47a1] transition-colors">
+                        <h3 className="text-sm font-bold text-slate-800 mb-1.5 line-clamp-2 leading-snug group-hover:text-[#0d47a1] transition-colors">
                           {doc.title || doc.file_name}
                         </h3>
-                        <p className="text-xs font-semibold text-slate-400 capitalize mb-4 line-clamp-1 flex items-center gap-2">
+                        <p className="text-xs font-medium text-slate-400 capitalize mb-4 line-clamp-1 flex items-center gap-2">
                           {doc.stream || 'General'}{' '}
                           {doc.semester ? `• Sem ${doc.semester}` : ''}
                           <span className="bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded text-[10px] font-bold uppercase">
@@ -293,7 +319,7 @@ export default function ResourcesPage() {
                           </span>
                         </p>
 
-                        <div className="mt-auto pt-4 border-t border-slate-50 flex items-center justify-between gap-2">
+                        <div className="mt-auto pt-3 border-t border-slate-100 flex items-center justify-between gap-2">
                           <button
                             type="button"
                             onClick={(e) => {
@@ -301,7 +327,7 @@ export default function ResourcesPage() {
                               e.stopPropagation();
                               router.push(`/chat?document_id=${doc.document_id}`);
                             }}
-                            className="flex-1 bg-blue-50 text-[#0d47a1] py-2 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors text-center cursor-pointer"
+                            className="flex-1 bg-slate-50 text-slate-700 hover:bg-blue-50 hover:text-[#0d47a1] border border-slate-200/60 py-2 rounded-xl text-xs font-semibold transition-colors text-center cursor-pointer"
                           >
                             Ask Doubt
                           </button>
@@ -313,7 +339,7 @@ export default function ResourcesPage() {
                               handleGenerateQuiz(doc);
                             }}
                             disabled={isGeneratingQuizId === doc.document_id}
-                            className="flex-1 bg-[#0d47a1] text-white py-2 rounded-xl text-xs font-bold hover:bg-blue-800 transition-colors text-center disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer"
+                            className="flex-1 bg-[#0d47a1] hover:bg-[#0b3c8a] text-white py-2 rounded-xl text-xs font-semibold transition-colors text-center disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer shadow-xs"
                           >
                             {isGeneratingQuizId === doc.document_id ? '...' : 'Quiz'}
                           </button>
@@ -322,42 +348,42 @@ export default function ResourcesPage() {
                     ))}
                   </div>
                 ) : (
-                  <div className="flex flex-col gap-4">
+                  <div className="flex flex-col gap-3">
                     {docs.map((doc) => (
                       <div
                         key={doc.document_id}
                         onClick={() => setSelectedPreviewDoc(doc)}
-                        className="bg-white border border-slate-100 rounded-2xl p-4 shadow-sm hover:shadow-md hover:border-blue-100 transition-all duration-300 flex items-center gap-6 group cursor-pointer relative"
+                        className="bg-white border border-slate-200/80 hover:border-[#0d47a1]/40 rounded-2xl p-4 shadow-[0_1px_3px_rgba(0,0,0,0.02)] hover:shadow-[0_4px_16px_rgba(0,0,0,0.04)] transition-all duration-200 flex items-center gap-5 group cursor-pointer relative"
                       >
                         {/* File Icon column */}
-                        <div className="w-14 h-14 bg-blue-50 rounded-2xl flex flex-col items-center justify-center shrink-0 border border-blue-100 group-hover:scale-105 transition-transform duration-300">
-                          <span className="material-symbols-outlined text-[#0d47a1] text-2xl">
+                        <div className="w-12 h-12 bg-blue-50/70 border border-blue-100/80 rounded-xl flex flex-col items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                          <span className="material-symbols-outlined text-[#0d47a1] text-xl">
                             {getFileType(doc.file_name || doc.title) === 'PDF'
                               ? 'picture_as_pdf'
                               : 'description'}
                           </span>
-                          <span className="text-[9px] font-black uppercase text-[#0d47a1]/70 mt-0.5 tracking-tighter line-clamp-1">
+                          <span className="text-[8px] font-black uppercase text-[#0d47a1]/70 tracking-tighter">
                             {getFileType(doc.file_name || doc.title)}
                           </span>
                         </div>
 
                         {/* Info column */}
                         <div className="flex-1 min-w-0 flex flex-col justify-center">
-                          <h3 className="text-[15px] font-bold text-slate-800 truncate group-hover:text-[#0d47a1] transition-colors leading-tight mb-1">
+                          <h3 className="text-sm font-bold text-slate-800 truncate group-hover:text-[#0d47a1] transition-colors leading-tight mb-1">
                             {doc.title || doc.file_name}
                           </h3>
-                          <div className="flex items-center gap-3 text-xs text-slate-500 font-medium">
-                            <span className="bg-slate-100 px-2 py-0.5 rounded-lg text-slate-600 border border-slate-200/50">
-                              Semester {doc.semester || '-'}
+                          <div className="flex items-center gap-2.5 text-xs text-slate-400 font-medium">
+                            <span className="bg-slate-100 px-2 py-0.5 rounded text-slate-600 font-semibold text-[11px]">
+                              Sem {doc.semester || '-'}
                             </span>
                             <span className="hidden sm:inline w-1 h-1 bg-slate-300 rounded-full"></span>
-                            <span className="truncate max-w-[120px] uppercase">
+                            <span className="truncate max-w-[120px] uppercase font-semibold text-[11px] text-slate-500">
                               {doc.stream || 'General'}
                             </span>
                             {doc.section && (
                               <>
                                 <span className="hidden sm:inline w-1 h-1 bg-slate-300 rounded-full"></span>
-                                <span className="truncate max-w-[100px] uppercase text-slate-500">
+                                <span className="truncate max-w-[100px] uppercase text-[11px] text-slate-500">
                                   {doc.section}
                                 </span>
                               </>
@@ -366,11 +392,11 @@ export default function ResourcesPage() {
                         </div>
 
                         {/* Date Column */}
-                        <div className="hidden lg:flex flex-col items-end shrink-0 mr-4">
-                          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest leading-none">
+                        <div className="hidden lg:flex flex-col items-end shrink-0 mr-2">
+                          <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">
                             Modified
                           </span>
-                          <span className="text-xs font-bold text-slate-600 mt-1.5">
+                          <span className="text-xs font-semibold text-slate-600 mt-1">
                             {new Date(doc.created_at || Date.now()).toLocaleDateString(undefined, {
                               month: 'short',
                               day: 'numeric',
@@ -388,7 +414,7 @@ export default function ResourcesPage() {
                               e.stopPropagation();
                               router.push(`/chat?document_id=${doc.document_id}`);
                             }}
-                            className="px-4 bg-blue-50 text-[#0d47a1] py-2.5 rounded-xl text-xs font-bold hover:bg-blue-100 transition-colors cursor-pointer"
+                            className="px-3.5 bg-slate-50 hover:bg-blue-50 text-slate-700 hover:text-[#0d47a1] border border-slate-200/60 py-2 rounded-xl text-xs font-semibold transition-colors cursor-pointer"
                           >
                             Ask Doubt
                           </button>
@@ -400,13 +426,14 @@ export default function ResourcesPage() {
                               handleGenerateQuiz(doc);
                             }}
                             disabled={isGeneratingQuizId === doc.document_id}
-                            className="px-5 w-32 bg-[#0d47a1] text-white py-2.5 rounded-xl text-xs font-bold hover:bg-blue-800 transition-all shadow-sm disabled:opacity-50 flex items-center justify-center gap-1 active:scale-95 cursor-pointer"
+                            className="px-4 bg-[#0d47a1] hover:bg-[#0b3c8a] text-white py-2 rounded-xl text-xs font-semibold transition-all disabled:opacity-50 flex items-center justify-center gap-1 cursor-pointer shadow-xs"
                           >
-                            {isGeneratingQuizId === doc.document_id ? '...' : 'Generate Quiz'}
+                            {isGeneratingQuizId === doc.document_id ? '...' : 'Quiz'}
                           </button>
                           <button
                             type="button"
-                            className="p-2.5 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+                            className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-all disabled:opacity-50 cursor-pointer"
+                            title="Download resource"
                             disabled={downloadingId === doc.document_id}
                             onClick={(e) => {
                               e.preventDefault();
@@ -414,7 +441,7 @@ export default function ResourcesPage() {
                               handleDownload(doc);
                             }}
                           >
-                            <span className="material-symbols-outlined text-[20px]">
+                            <span className="material-symbols-outlined text-[18px]">
                               {downloadingId === doc.document_id ? 'hourglass_top' : 'download'}
                             </span>
                           </button>

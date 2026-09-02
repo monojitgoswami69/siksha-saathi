@@ -21,10 +21,6 @@ class Settings(BaseSettings):
     r2_secret_access_key: str = Field(default="", alias="R2_SECRET_ACCESS_KEY")
     r2_bucket_name: str = Field(default="siksha-saathi", alias="R2_BUCKET_NAME")
 
-    # Dropbox
-    dropbox_app_key: str = Field(default="", alias="DROPBOX_APP_KEY")
-    dropbox_app_secret: str = Field(default="", alias="DROPBOX_APP_SECRET")
-    dropbox_refresh_token: str = Field(default="", alias="DROPBOX_REFRESH_TOKEN")
 
     # Embedding model
     embedding_model: str = Field(

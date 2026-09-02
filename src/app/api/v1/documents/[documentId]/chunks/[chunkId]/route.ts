@@ -26,7 +26,7 @@ export async function GET(
       `SELECT c.id, c.document_id, c.chunk_index, c.total_chunks, c.raw_content,
               c.page_start, c.page_end, c.paragraph_id, c.chunk_type, c.char_start, c.char_end,
               c.file_name, c.title, c.stream, c.semester, c.section, c.subject, c.module,
-              d.storage_provider, d.file_key, d.preview_url, d.dropbox_path, d.dropbox_shared_link
+              d.storage_provider, d.file_key, d.preview_url
        FROM document_chunks c
        JOIN documents d ON d.id = c.document_id
        WHERE c.id = $1 AND c.document_id = $2;`,
@@ -55,14 +55,22 @@ export async function GET(
       }
     }
 
-    let previewUrl = row.preview_url || row.dropbox_shared_link;
-    const fileKey = row.file_key || row.dropbox_path;
-    const provider = row.storage_provider || (row.dropbox_path ? 'dropbox' : 'r2');
+    let previewUrl = row.preview_url;
+    const fileKey = row.file_key;
+    const provider = row.storage_provider || 'r2';
     if (fileKey) {
-      try {
-        const liveUrl = await getStoragePreviewUrl({ fileKey, provider });
-        if (liveUrl) previewUrl = liveUrl;
-      } catch {}
+      if (provider === 'local' || !row.storage_provider) {
+        previewUrl = `/api/v1/documents/${row.document_id}/file`;
+      } else {
+        try {
+          const liveUrl = await getStoragePreviewUrl({ fileKey, provider });
+          if (liveUrl) previewUrl = liveUrl;
+        } catch {}
+      }
+    }
+
+    if (!previewUrl && fileKey) {
+      previewUrl = `/api/v1/documents/${row.document_id}/file`;
     }
 
     return NextResponse.json({

@@ -12,6 +12,7 @@ import {
   X,
   RefreshCw,
   KeyRound,
+  ChevronDown,
 } from 'lucide-react';
 import { formatDate } from '@/lib/client/utils';
 
@@ -344,53 +345,131 @@ export default function StudentsPage() {
               <h3 className="font-bold text-neutral-900 text-base">Add Student</h3>
               <button onClick={() => setShowAddModal(false)} className="p-1.5 text-neutral-400 hover:text-neutral-700 hover:bg-neutral-100 rounded-lg transition-colors"><X className="w-5 h-5" /></button>
             </div>
-            <form onSubmit={handleAddSubmit} className="space-y-3">
+            <form onSubmit={handleAddSubmit} className="space-y-3.5">
               <div className="grid grid-cols-2 gap-3">
-                <input required type="email" placeholder="Email" value={addForm.email} onChange={(e) => setAddForm({ ...addForm, email: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                <input type="text" placeholder="Password (default student123)" minLength={6} value={addForm.password} onChange={(e) => setAddForm({ ...addForm, password: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                <input required type="text" placeholder="Full name" value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                <input required type="text" placeholder="Roll number" value={addForm.roll} onChange={(e) => setAddForm({ ...addForm, roll: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                <select
-                  value={addForm.stream}
-                  onChange={(e) => {
-                    const newStream = e.target.value;
-                    const newSecs = streamSections[newStream.toLowerCase()] || [];
-                    setAddForm({
-                      ...addForm,
-                      stream: newStream,
-                      section: newSecs[0] || 'cse1',
-                    });
-                  }}
-                  className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-                >
-                  {filterStreams.map((s) => (
-                    <option key={s} value={s}>
-                      {s.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={addForm.sem}
-                  onChange={(e) => setAddForm({ ...addForm, sem: e.target.value })}
-                  className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-                >
-                  {['1', '2', '3', '4', '5', '6', '7', '8'].map((sem) => (
-                    <option key={sem} value={sem}>
-                      Semester {sem}
-                    </option>
-                  ))}
-                </select>
-                <select
-                  value={addForm.section}
-                  onChange={(e) => setAddForm({ ...addForm, section: e.target.value })}
-                  className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none col-span-2"
-                >
-                  {(streamSections[addForm.stream.toLowerCase()] || ['cse1', 'cse2', 'cse3', 'cse4']).map((sec) => (
-                    <option key={sec} value={sec}>
-                      {sec.toUpperCase()}
-                    </option>
-                  ))}
-                </select>
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                    Student Email <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    required
+                    type="email"
+                    placeholder="student@college.edu"
+                    value={addForm.email}
+                    onChange={(e) => setAddForm({ ...addForm, email: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                    Initial Password
+                  </label>
+                  <input
+                    type="text"
+                    placeholder="student123 (default)"
+                    minLength={6}
+                    value={addForm.password}
+                    onChange={(e) => setAddForm({ ...addForm, password: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-mono focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                    Full Name <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. Monojit Goswami"
+                    value={addForm.name}
+                    onChange={(e) => setAddForm({ ...addForm, name: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                    Roll Number <span className="text-rose-500">*</span>
+                  </label>
+                  <input
+                    required
+                    type="text"
+                    placeholder="e.g. 10100122045"
+                    value={addForm.roll}
+                    onChange={(e) => setAddForm({ ...addForm, roll: e.target.value })}
+                    className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                    Department / Stream <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={addForm.stream}
+                      onChange={(e) => {
+                        const newStream = e.target.value;
+                        const newSecs = streamSections[newStream.toLowerCase()] || [];
+                        setAddForm({
+                          ...addForm,
+                          stream: newStream,
+                          section: newSecs[0] || `${newStream.toLowerCase()}1`,
+                        });
+                      }}
+                      className="w-full appearance-none pl-3 pr-8 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
+                    >
+                      {filterStreams.map((s) => (
+                        <option key={s} value={s}>
+                          {s.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                    Semester <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={addForm.sem}
+                      onChange={(e) => setAddForm({ ...addForm, sem: e.target.value })}
+                      className="w-full appearance-none pl-3 pr-8 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
+                    >
+                      {['1', '2', '3', '4', '5', '6', '7', '8'].map((sem) => (
+                        <option key={sem} value={sem}>
+                          Semester {sem}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
+
+                <div className="col-span-2">
+                  <label className="block text-[11px] font-bold text-neutral-500 uppercase tracking-wider mb-1">
+                    Section / Batch <span className="text-rose-500">*</span>
+                  </label>
+                  <div className="relative">
+                    <select
+                      value={addForm.section}
+                      onChange={(e) => setAddForm({ ...addForm, section: e.target.value })}
+                      className="w-full appearance-none pl-3 pr-8 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-emerald-500/20 focus:border-emerald-500 outline-none cursor-pointer"
+                    >
+                      {(streamSections[addForm.stream.toLowerCase()] || ['cse1', 'cse2', 'cse3', 'cse4']).map((sec) => (
+                        <option key={sec} value={sec}>
+                          {sec.toUpperCase()}
+                        </option>
+                      ))}
+                    </select>
+                    <ChevronDown className="w-4 h-4 text-neutral-400 pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2" />
+                  </div>
+                </div>
               </div>
               <div className="flex gap-2 justify-end pt-3 border-t border-neutral-100">
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl transition-colors">Cancel</button>

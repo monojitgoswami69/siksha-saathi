@@ -51,7 +51,7 @@ export async function GET(req: NextRequest) {
 
     let sql = `
       SELECT id as document_id, id, title, file_name, mime_type, file_size_bytes as file_size,
-             dropbox_path, dropbox_shared_link, stream, semester, section, subject, module,
+             storage_provider, file_key, preview_url, stream, semester, section, subject, module,
              uploaded_by, uploader_email, total_chunks, created_at
       FROM documents d
       WHERE 1=1
@@ -103,7 +103,6 @@ export async function GET(req: NextRequest) {
         chunks_count: d.total_chunks,
         created_at: d.created_at ? new Date(d.created_at).toISOString() : new Date().toISOString(),
         uploaded_by: d.uploader_email || d.uploaded_by,
-        dropbox_shared_link: d.dropbox_shared_link,
       })),
       total: res.rowCount,
     });

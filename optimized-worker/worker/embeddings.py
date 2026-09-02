@@ -80,32 +80,35 @@ async def embed_texts_via_service(
     This does NOT load SentenceTransformer locally.
     The embedding service handles model loading, E5 prefixes, and normalization.
     """
-    if not texts:
-        return []
-
+    BATCH_CHUNK = 64
+    all_embeddings: list[list[float]] = []
     url = get_service_url()
     t0 = time.perf_counter()
-    async with httpx.AsyncClient() as client:
-        resp = await client.post(
-            f"{url}/embed/batch",
-            json={"texts": texts, "is_query": is_query},
-            timeout=TIMEOUT_S,
-        )
 
-    if resp.status_code != 200:
-        raise RuntimeError(
-            f"Embedding service returned {resp.status_code}: {resp.text}. "
-            f"Is the service running at {url}?"
-        )
+    async with httpx.AsyncClient(timeout=60.0) as client:
+        for i in range(0, len(texts), BATCH_CHUNK):
+            batch = texts[i : i + BATCH_CHUNK]
+            resp = await client.post(
+                f"{url}/embed/batch",
+                json={"texts": batch, "is_query": is_query},
+            )
 
-    data = resp.json()
+            if resp.status_code != 200:
+                raise RuntimeError(
+                    f"Embedding service returned {resp.status_code}: {resp.text}. "
+                    f"Is the service running at {url}?"
+                )
+
+            data = resp.json()
+            all_embeddings.extend(data["embeddings"])
+
     elapsed = time.perf_counter() - t0
-    logger.debug(
-        "Embedded %d texts via service in %.3fs (%.1f texts/sec)",
+    logger.info(
+        "✅ Embedded %d texts via service in %.2fs (%.1f texts/sec)",
         len(texts), elapsed, len(texts) / elapsed if elapsed > 0 else 0,
     )
 
-    return data["embeddings"]
+    return all_embeddings
 
 
 async def embed_single_via_service(text: str, is_query: bool = True) -> list[float]:

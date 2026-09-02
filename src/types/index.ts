@@ -23,6 +23,7 @@ export interface ChatSession {
   id: string;
   title: string;
   is_pinned?: boolean;
+  pinned_at?: string | null;
   created_at: string;
   updated_at: string;
   message_count: number;
@@ -68,7 +69,6 @@ export interface DocumentInfo {
   chunks_count?: number;
   created_at: string;
   uploaded_by?: string;
-  dropbox_shared_link?: string;
 }
 
 export interface QuizOption {

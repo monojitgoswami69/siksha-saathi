@@ -16,7 +16,7 @@ export async function GET(
     const { documentId } = await params;
 
     const docRes = await query(
-      'SELECT id, title, file_name, storage_provider, file_key, preview_url, dropbox_path, dropbox_shared_link, stream, semester, section FROM documents WHERE id = $1;',
+      'SELECT id, title, file_name, storage_provider, file_key, preview_url, stream, semester, section FROM documents WHERE id = $1;',
       [documentId]
     );
 
@@ -31,7 +31,7 @@ export async function GET(
         const p = profileRes.rows[0] as any;
         const doc = docRes.rows[0] as any;
         const streamOk = !doc.stream || doc.stream === 'General' || doc.stream.toLowerCase() === (p.stream || '').toLowerCase();
-        const semOk = !doc.semester || doc.semester === 'General' || doc.semester === p.sem;
+        const semOk = !doc.semester || doc.semester === 'General' || String(doc.semester) === String(p.sem);
         const secOk = !doc.section || doc.section === 'General' || doc.section.toLowerCase() === (p.section || '').toLowerCase();
         if (!streamOk || !semOk || !secOk) {
           return NextResponse.json({ detail: 'Access denied for this material.' }, { status: 403 });
@@ -40,19 +40,27 @@ export async function GET(
     }
 
     const doc = docRes.rows[0];
-    const fileKey = doc.file_key || doc.dropbox_path;
-    const provider = doc.storage_provider || (doc.dropbox_path ? 'dropbox' : 'r2');
+    const fileKey = doc.file_key;
+    const provider = doc.storage_provider || 'r2';
 
-    let previewUrl = doc.preview_url || doc.dropbox_shared_link;
+    let previewUrl = doc.preview_url;
 
     if (fileKey) {
-      try {
-        const liveUrl = await getStoragePreviewUrl({
-          fileKey,
-          provider,
-        });
-        if (liveUrl) previewUrl = liveUrl;
-      } catch {}
+      if (provider === 'local' || !doc.storage_provider) {
+        previewUrl = `/api/v1/documents/${documentId}/file`;
+      } else {
+        try {
+          const liveUrl = await getStoragePreviewUrl({
+            fileKey,
+            provider,
+          });
+          if (liveUrl) previewUrl = liveUrl;
+        } catch {}
+      }
+    }
+
+    if (!previewUrl && fileKey) {
+      previewUrl = `/api/v1/documents/${documentId}/file`;
     }
 
     return NextResponse.json({

@@ -101,14 +101,7 @@ export default function AddDocumentPage() {
           (!section || section === 'General' || a.section.toLowerCase() === section.toLowerCase())
         )
         .map((a) => a.subject)))
-    : (curriculum[stream]?.[semester] || [
-        'Data Structures',
-        'Operating Systems',
-        'Algorithms',
-        'Database Management Systems',
-        'Computer Networks',
-        'Software Engineering',
-      ]);
+    : (curriculum[stream.toLowerCase()]?.[semester] || curriculum[stream]?.[semester] || []);
 
   const handleFileDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
@@ -157,7 +150,7 @@ export default function AddDocumentPage() {
       <div>
         <h1 className="text-2xl font-bold tracking-tight text-neutral-900">Ingest Course Materials with OCR</h1>
         <p className="text-xs text-neutral-500 mt-1">
-          Upload PDF, DOCX, PPTX, or Image files. Text is extracted with Tesseract OCR fallback, uploaded to Dropbox, embedded via Gemini, and indexed into NeonDB pgvector.
+          Upload PDF, DOCX, PPTX, or Image files. Text is extracted with Tesseract OCR fallback, uploaded to Cloudflare R2, embedded, and indexed into pgvector.
         </p>
       </div>
 

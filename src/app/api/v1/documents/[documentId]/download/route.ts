@@ -16,7 +16,7 @@ export async function GET(
     const { documentId } = await params;
 
     const docRes = await query(
-      'SELECT id, title, file_name, storage_provider, file_key, preview_url, dropbox_path, dropbox_shared_link, stream, semester, section FROM documents WHERE id = $1;',
+      'SELECT id, title, file_name, storage_provider, file_key, preview_url, stream, semester, section FROM documents WHERE id = $1;',
       [documentId]
     );
 
@@ -40,20 +40,28 @@ export async function GET(
     }
 
     const doc = docRes.rows[0];
-    const fileKey = doc.file_key || doc.dropbox_path;
-    const provider = doc.storage_provider || (doc.dropbox_path ? 'dropbox' : 'r2');
+    const fileKey = doc.file_key;
+    const provider = doc.storage_provider || 'r2';
 
-    let downloadUrl = doc.preview_url || doc.dropbox_shared_link;
+    let downloadUrl = doc.preview_url;
 
     if (fileKey) {
-      try {
-        const liveUrl = await getStorageDownloadUrl({
-          fileKey,
-          filename: doc.file_name || doc.title,
-          provider,
-        });
-        if (liveUrl) downloadUrl = liveUrl;
-      } catch {}
+      if (provider === 'local' || !doc.storage_provider) {
+        downloadUrl = `/api/v1/documents/${documentId}/file?download=1`;
+      } else {
+        try {
+          const liveUrl = await getStorageDownloadUrl({
+            fileKey,
+            filename: doc.file_name || doc.title,
+            provider,
+          });
+          if (liveUrl) downloadUrl = liveUrl;
+        } catch {}
+      }
+    }
+
+    if (!downloadUrl && fileKey) {
+      downloadUrl = `/api/v1/documents/${documentId}/file?download=1`;
     }
 
     return NextResponse.json({

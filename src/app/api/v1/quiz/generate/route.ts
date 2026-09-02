@@ -112,11 +112,34 @@ export async function POST(req: NextRequest) {
       ? quizQuestions
       : (quizQuestions as any)?.questions || [];
 
+    const quizId = `quiz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+
+    // Persist quiz so students can track, pause, and resume anytime
+    try {
+      await query(
+        `INSERT INTO quizzes (id, user_id, subject, num_questions, document_id, file_name, questions, status)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, 'available')
+         ON CONFLICT (id) DO NOTHING;`,
+        [
+          quizId,
+          user.uid,
+          subject || 'General',
+          questionsList.length,
+          document_id || null,
+          file_name || null,
+          JSON.stringify(questionsList),
+        ]
+      );
+    } catch (dbErr) {
+      console.error('Failed to persist quiz record:', dbErr);
+    }
+
     const quizResponse = {
-      quiz_id: `quiz_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+      quiz_id: quizId,
       subject: subject || 'General',
       num_questions: questionsList.length,
       questions: questionsList,
+      status: 'available',
     };
 
     return NextResponse.json(quizResponse);

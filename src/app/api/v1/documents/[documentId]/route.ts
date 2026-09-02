@@ -21,7 +21,7 @@ export async function DELETE(
     const { documentId } = await params;
 
     const docRes = await query(
-      'SELECT id, title, file_name, storage_provider, file_key, dropbox_path FROM documents WHERE id = $1;',
+      'SELECT id, title, file_name, storage_provider, file_key FROM documents WHERE id = $1;',
       [documentId]
     );
 
@@ -30,10 +30,10 @@ export async function DELETE(
     }
 
     const doc = docRes.rows[0];
-    const fileKey = doc.file_key || doc.dropbox_path;
-    const provider = doc.storage_provider || (doc.dropbox_path ? 'dropbox' : 'r2');
+    const fileKey = doc.file_key;
+    const provider = doc.storage_provider || 'r2';
 
-    // 1. Delete from Cloud Storage (R2 or Dropbox)
+    // 1. Delete from Storage (Cloudflare R2 or local disk)
     if (fileKey) {
       await deleteStorageFile({ fileKey, provider });
     }

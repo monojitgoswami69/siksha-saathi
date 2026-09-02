@@ -108,8 +108,6 @@ export const documents = pgTable('documents', {
   storageProvider: varchar('storage_provider', { length: 50 }).default('r2'),
   fileKey: varchar('file_key', { length: 500 }),
   previewUrl: varchar('preview_url', { length: 1000 }),
-  dropboxPath: varchar('dropbox_path', { length: 500 }),
-  dropboxSharedLink: varchar('dropbox_shared_link', { length: 500 }),
   stream: varchar('stream', { length: 100 }),
   semester: varchar('semester', { length: 20 }),
   section: varchar('section', { length: 50 }),
@@ -171,6 +169,7 @@ export const chatSessions = pgTable('chat_sessions', {
     .notNull(),
   title: varchar('title', { length: 255 }).notNull().default('New Chat'),
   isPinned: boolean('is_pinned').default(false),
+  pinnedAt: timestamp('pinned_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
 });
@@ -217,6 +216,35 @@ export const quizResults = pgTable(
   },
   (table) => [
     index('idx_quiz_results_user').on(table.userId, table.submittedAt.desc()),
+  ]
+);
+
+/**
+ * 7b. Persistent Quizzes (Available, Incomplete / In Progress, Completed)
+ */
+export const quizzes = pgTable(
+  'quizzes',
+  {
+    id: varchar('id', { length: 100 }).primaryKey(),
+    userId: uuid('user_id')
+      .references(() => studentUsers.id, { onDelete: 'cascade' })
+      .notNull(),
+    subject: varchar('subject', { length: 200 }).notNull(),
+    numQuestions: integer('num_questions').notNull(),
+    documentId: uuid('document_id').references(() => documents.id, { onDelete: 'set null' }),
+    fileName: varchar('file_name', { length: 255 }),
+    questions: jsonb('questions').notNull(),
+    selectedAnswers: jsonb('selected_answers').notNull().default('{}'),
+    reviewAnswers: jsonb('review_answers').notNull().default('{}'),
+    status: varchar('status', { length: 50 }).notNull().default('available'),
+    score: integer('score'),
+    percentage: integer('percentage'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => [
+    index('idx_quizzes_user_status').on(table.userId, table.status, table.updatedAt.desc()),
   ]
 );
 
