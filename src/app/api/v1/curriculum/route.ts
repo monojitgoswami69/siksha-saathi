@@ -23,9 +23,10 @@ export async function GET(req: NextRequest) {
       pIdx++;
     }
     if (semester) {
-      sql += ` AND semester = $${pIdx}`;
-      params.push(semester);
-      pIdx++;
+      const cleanSem = semester.replace(/^(?:sem|semester)\s*/i, '');
+      sql += ` AND (semester = $${pIdx} OR semester = $${pIdx + 1})`;
+      params.push(semester, cleanSem);
+      pIdx += 2;
     }
 
     sql += ' ORDER BY stream ASC, semester ASC;';

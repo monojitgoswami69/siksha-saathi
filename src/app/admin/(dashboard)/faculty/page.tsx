@@ -59,6 +59,8 @@ export default function ManageFacultyPage() {
 
   // Curriculum data for dropdowns
   const [curriculum, setCurriculum] = useState<Record<string, Record<string, string[]>>>({});
+  const [streamSections, setStreamSections] = useState<Record<string, string[]>>({});
+  const [curriculumSections, setCurriculumSections] = useState<Record<string, Record<string, string[]>>>({});
   const [filterStreams, setFilterStreams] = useState<string[]>([]);
   const [filterSections, setFilterSections] = useState<string[]>([]);
 
@@ -91,6 +93,8 @@ export default function ManageFacultyPage() {
       .getFilters()
       .then((data) => {
         if (data?.curriculum) setCurriculum(data.curriculum);
+        if (data?.streamSections) setStreamSections(data.streamSections);
+        if (data?.curriculumSections) setCurriculumSections(data.curriculumSections);
         if (Array.isArray(data.streams)) setFilterStreams(data.streams);
         if (Array.isArray(data.sections)) setFilterSections(data.sections);
       })
@@ -435,6 +439,10 @@ export default function ManageFacultyPage() {
                   )}
                   {form.assignments.map((a, idx) => {
                     const subjects = curriculum[a.stream]?.[a.semester] || [];
+                    const secs =
+                      curriculumSections[a.stream.toLowerCase()]?.[a.semester] ||
+                      streamSections[a.stream.toLowerCase()] ||
+                      filterSections;
                     return (
                       <div key={idx} className="grid grid-cols-5 gap-2 items-center bg-neutral-50 border border-neutral-200 rounded-xl p-2">
                         <select value={a.stream} onChange={(e) => updateAssignment(idx, 'stream', e.target.value)} className="bg-white border border-neutral-200 rounded-lg text-[11px] text-neutral-900 px-1.5 py-1 outline-none uppercase font-semibold">
@@ -443,8 +451,10 @@ export default function ManageFacultyPage() {
                         <select value={a.semester} onChange={(e) => updateAssignment(idx, 'semester', e.target.value)} className="bg-white border border-neutral-200 rounded-lg text-[11px] text-neutral-900 px-1.5 py-1 outline-none">
                           {SEMS.map((s) => <option key={s} value={s}>Sem {s}</option>)}
                         </select>
-                        <input list={`sec-${idx}`} value={a.section} onChange={(e) => updateAssignment(idx, 'section', e.target.value)} placeholder="section" className="bg-white border border-neutral-200 rounded-lg text-[11px] text-neutral-900 px-1.5 py-1 outline-none uppercase" />
-                        <datalist id={`sec-${idx}`}>{filterSections.map((s) => <option key={s} value={s} />)}</datalist>
+                        <select value={a.section} onChange={(e) => updateAssignment(idx, 'section', e.target.value)} className="bg-white border border-neutral-200 rounded-lg text-[11px] text-neutral-900 px-1.5 py-1 outline-none uppercase font-medium">
+                          <option value="General">General</option>
+                          {secs.map((s) => <option key={s} value={s}>{s.toUpperCase()}</option>)}
+                        </select>
                         <select value={a.subject} onChange={(e) => updateAssignment(idx, 'subject', e.target.value)} className="bg-white border border-neutral-200 rounded-lg text-[11px] text-neutral-900 px-1.5 py-1 outline-none truncate">
                           <option value="General">General</option>
                           {subjects.map((s) => <option key={s} value={s}>{s}</option>)}

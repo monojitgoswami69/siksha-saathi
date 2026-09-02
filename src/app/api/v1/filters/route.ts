@@ -33,21 +33,77 @@ export async function GET(req: NextRequest) {
         "SELECT DISTINCT section FROM documents WHERE section IS NOT NULL AND section != '' UNION SELECT DISTINCT section FROM student_users WHERE section IS NOT NULL AND section != '';"
       ),
       query('SELECT stream, semester, subjects, sections FROM curriculum ORDER BY stream ASC, semester ASC;'),
-      // Also extract sections from curriculum.sections JSONB array
-      query("SELECT DISTINCT jsonb_array_elements(sections)->>'name' as section FROM curriculum WHERE sections IS NOT NULL AND sections != '[]' AND sections != 'null';"),
+      // Also extract sections from curriculum.sections JSONB array (handles both string and object elements)
+      query(`
+        SELECT DISTINCT CASE 
+          WHEN jsonb_typeof(x) = 'string' THEN x #>> '{}' 
+          ELSE COALESCE(x->>'name', x->>'section') 
+        END as section 
+        FROM curriculum, jsonb_array_elements(sections) x 
+        WHERE sections IS NOT NULL AND sections != '[]'::jsonb AND sections != 'null'::jsonb;
+      `).catch(() => ({ rows: [] })),
     ]);
 
-    // Build curriculum map strictly from DB
+    // Build curriculum map strictly from DB (both subjects and sections per stream/semester)
     const curriculumMap: Record<string, Record<string, string[]>> = {};
+    const streamSections: Record<string, string[]> = {};
+    const curriculumSections: Record<string, Record<string, string[]>> = {};
+
     curricRes.rows.forEach((row) => {
       const s = row.stream.toLowerCase();
       const sem = row.semester;
       const subs = Array.isArray(row.subjects)
-        ? row.subjects.map((sub: any) => (typeof sub === 'string' ? sub : sub.name || sub.title))
+        ? row.subjects.flatMap((sub: any) => {
+            if (typeof sub === 'string') return [sub];
+            if (sub && typeof sub === 'object') {
+              if (sub.name || sub.title) return [sub.name || sub.title];
+              return Object.values(sub).flat().filter((x) => typeof x === 'string');
+            }
+            return [];
+          })
         : [];
+
+      const secs = Array.isArray(row.sections)
+        ? row.sections.map((sec: any) => {
+            if (typeof sec === 'string') return sec;
+            if (sec && typeof sec === 'object') return sec.name || sec.section || '';
+            return '';
+          }).filter(Boolean)
+        : [];
+
       if (!curriculumMap[s]) curriculumMap[s] = {};
       curriculumMap[s][sem] = subs;
+
+      if (!curriculumSections[s]) curriculumSections[s] = {};
+      curriculumSections[s][sem] = secs;
+
+      if (!streamSections[s]) streamSections[s] = [];
+      secs.forEach((sec: string) => {
+        if (!streamSections[s].includes(sec)) streamSections[s].push(sec);
+      });
     });
+
+    // Fallback to departments_curriculum.json if DB is empty
+    if (Object.keys(curriculumMap).length === 0) {
+      try {
+        const { getDefaultCurriculumEntries } = await import('@/lib/server/defaultCurriculum');
+        const defaultEntries = getDefaultCurriculumEntries();
+        for (const e of defaultEntries) {
+          if (!curriculumMap[e.stream]) curriculumMap[e.stream] = {};
+          curriculumMap[e.stream][e.semester] = e.subjects;
+
+          if (!curriculumSections[e.stream]) curriculumSections[e.stream] = {};
+          curriculumSections[e.stream][e.semester] = e.sections;
+
+          if (!streamSections[e.stream]) streamSections[e.stream] = [];
+          e.sections.forEach((sec) => {
+            if (!streamSections[e.stream].includes(sec)) streamSections[e.stream].push(sec);
+          });
+        }
+      } catch (err) {
+        console.warn('Could not load default curriculum fallback:', err);
+      }
+    }
 
     const streams = Array.from(
       new Set([
@@ -132,6 +188,8 @@ export async function GET(req: NextRequest) {
       streams,
       semesters,
       sections,
+      streamSections,
+      curriculumSections,
       subjects: allSubjects,
       files,
       curriculum: curriculumMap,

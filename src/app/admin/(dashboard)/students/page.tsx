@@ -33,6 +33,11 @@ export default function StudentsPage() {
   const [addForm, setAddForm] = useState({ email: '', name: '', roll: '', stream: 'cse', sem: '1', section: 'cse1', password: '' });
   const [adding, setAdding] = useState(false);
 
+  // Filter data for dropdowns
+  const [filterStreams, setFilterStreams] = useState<string[]>(['cse', 'it', 'ece', 'ee']);
+  const [streamSections, setStreamSections] = useState<Record<string, string[]>>({});
+  const [curriculumSections, setCurriculumSections] = useState<Record<string, Record<string, string[]>>>({});
+
   const loadStudents = async () => {
     setLoading(true);
     try {
@@ -46,6 +51,19 @@ export default function StudentsPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    api.filters
+      .getFilters()
+      .then((data) => {
+        if (data) {
+          if (Array.isArray(data.streams) && data.streams.length) setFilterStreams(data.streams);
+          if (data.streamSections) setStreamSections(data.streamSections);
+          if (data.curriculumSections) setCurriculumSections(data.curriculumSections);
+        }
+      })
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     loadStudents();
@@ -162,7 +180,7 @@ export default function StudentsPage() {
         <div className="flex items-center gap-1.5 bg-white border border-neutral-200 p-1.5 rounded-xl shadow-sm w-full sm:w-auto overflow-x-auto">
           <Filter className="w-4 h-4 text-neutral-400 ml-2" />
           <span className="text-xs text-neutral-500 font-semibold mr-1">Stream:</span>
-          {['All', 'cse', 'it', 'ece', 'ee'].map((st) => (
+          {['All', ...filterStreams].map((st) => (
             <button
               key={st}
               onClick={() => setSelectedStream(st)}
@@ -332,9 +350,47 @@ export default function StudentsPage() {
                 <input type="text" placeholder="Password (default student123)" minLength={6} value={addForm.password} onChange={(e) => setAddForm({ ...addForm, password: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-mono focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
                 <input required type="text" placeholder="Full name" value={addForm.name} onChange={(e) => setAddForm({ ...addForm, name: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
                 <input required type="text" placeholder="Roll number" value={addForm.roll} onChange={(e) => setAddForm({ ...addForm, roll: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                <input required type="text" placeholder="Stream (e.g. cse)" value={addForm.stream} onChange={(e) => setAddForm({ ...addForm, stream: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                <input required type="text" placeholder="Semester" value={addForm.sem} onChange={(e) => setAddForm({ ...addForm, sem: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none" />
-                <input required type="text" placeholder="Section (e.g. cse1)" value={addForm.section} onChange={(e) => setAddForm({ ...addForm, section: e.target.value })} className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none col-span-2" />
+                <select
+                  value={addForm.stream}
+                  onChange={(e) => {
+                    const newStream = e.target.value;
+                    const newSecs = streamSections[newStream.toLowerCase()] || [];
+                    setAddForm({
+                      ...addForm,
+                      stream: newStream,
+                      section: newSecs[0] || 'cse1',
+                    });
+                  }}
+                  className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                >
+                  {filterStreams.map((s) => (
+                    <option key={s} value={s}>
+                      {s.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={addForm.sem}
+                  onChange={(e) => setAddForm({ ...addForm, sem: e.target.value })}
+                  className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+                >
+                  {['1', '2', '3', '4', '5', '6', '7', '8'].map((sem) => (
+                    <option key={sem} value={sem}>
+                      Semester {sem}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={addForm.section}
+                  onChange={(e) => setAddForm({ ...addForm, section: e.target.value })}
+                  className="px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 uppercase font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none col-span-2"
+                >
+                  {(streamSections[addForm.stream.toLowerCase()] || ['cse1', 'cse2', 'cse3', 'cse4']).map((sec) => (
+                    <option key={sec} value={sec}>
+                      {sec.toUpperCase()}
+                    </option>
+                  ))}
+                </select>
               </div>
               <div className="flex gap-2 justify-end pt-3 border-t border-neutral-100">
                 <button type="button" onClick={() => setShowAddModal(false)} className="px-4 py-2 text-xs font-semibold text-neutral-600 hover:text-neutral-900 hover:bg-neutral-100 rounded-xl transition-colors">Cancel</button>

@@ -26,6 +26,8 @@ export default function AddTextPage() {
   const [submitting, setSubmitting] = useState(false);
 
   const [curriculum, setCurriculum] = useState<Record<string, Record<string, string[]>>>({});
+  const [streamSections, setStreamSections] = useState<Record<string, string[]>>({});
+  const [curriculumSections, setCurriculumSections] = useState<Record<string, Record<string, string[]>>>({});
   const [filterStreams, setFilterStreams] = useState<string[]>([]);
   const [filterSections, setFilterSections] = useState<string[]>([]);
 
@@ -39,6 +41,8 @@ export default function AddTextPage() {
           const ks = Object.keys(data.curriculum);
           if (ks.length && !filterStreams.length) setStream(ks[0]);
         }
+        if (data.streamSections) setStreamSections(data.streamSections);
+        if (data.curriculumSections) setCurriculumSections(data.curriculumSections);
         if (Array.isArray(data.streams) && data.streams.length) setFilterStreams(data.streams);
         if (Array.isArray(data.sections)) setFilterSections(data.sections);
       })
@@ -56,13 +60,24 @@ export default function AddTextPage() {
         : Array.from(new Set(facultyAssignments.filter((a) => a.stream.toLowerCase() === stream.toLowerCase()).map((a) => a.semester))))
     : Object.keys(curriculum[stream] || { '1': [], '2': [], '3': [], '4': [], '5': [], '6': [], '7': [], '8': [] });
 
+  const streamSpecificSections =
+    curriculumSections[stream.toLowerCase()]?.[semester] ||
+    streamSections[stream.toLowerCase()] ||
+    filterSections;
+
   const sectionsForRole = isScopedRole
     ? (isHodForStream(stream)
-        ? filterSections
+        ? streamSpecificSections
         : Array.from(new Set(facultyAssignments
             .filter((a) => a.stream.toLowerCase() === stream.toLowerCase() && (!semester || semester === 'General' || a.semester === semester))
             .map((a) => a.section))))
-    : filterSections;
+    : streamSpecificSections;
+
+  useEffect(() => {
+    if (sectionsForRole.length > 0 && section !== 'General' && !sectionsForRole.includes(section)) {
+      setSection(sectionsForRole[0] || 'General');
+    }
+  }, [sectionsForRole, section]);
 
   const subjectsForSelection = isScopedRole && !isHodForStream(stream)
     ? Array.from(new Set(facultyAssignments
@@ -172,20 +187,18 @@ export default function AddTextPage() {
 
           <div>
             <label className="block text-xs font-semibold text-neutral-600 uppercase tracking-wider mb-1.5">Section</label>
-            <input
-              type="text"
+            <select
               value={section}
               onChange={(e) => setSection(e.target.value)}
-              list="section-options"
-              placeholder="e.g. cse1 / General"
-              className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
-            />
-            <datalist id="section-options">
-              <option value="General" />
+              className="w-full px-3 py-2 bg-white border border-neutral-200 rounded-xl text-xs text-neutral-900 font-semibold focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 outline-none"
+            >
+              <option value="General">General (all sections)</option>
               {sectionsForRole.map((s) => (
-                <option key={s} value={s} />
+                <option key={s} value={s}>
+                  {s.toUpperCase()}
+                </option>
               ))}
-            </datalist>
+            </select>
           </div>
 
           <div>

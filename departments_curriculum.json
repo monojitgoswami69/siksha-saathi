@@ -1,0 +1,549 @@
+{
+  "university": "Maulana Abul Kalam Azad University of Technology (MAKAUT)",
+  "college": "Academy of Technology (AOT)",
+  "departments": {
+    "CSE": {
+      "full_name": "Computer Science & Engineering",
+      "course_code": "001",
+      "batches": ["cse1", "cse2", "cse3", "cse4"],
+      "active_sessions": ["2020-2021", "2023-2024"],
+      "curriculum": {
+        "Semester 3": [
+          "Analog and Digital Electronics",
+          "Data Structure & Algorithms",
+          "Computer Organisation",
+          "Mathematics-III (Differential Calculus)",
+          "Economics for Engineers",
+          "IT Workshop (Sci Lab/MATLAB/Python/R)",
+          "Analog and Digital Electronics Lab",
+          "Data Structure & Algorithms Lab",
+          "Computer Organisation Lab"
+        ],
+        "Semester 4": [
+          "Discrete Mathematics",
+          "Computer Architecture",
+          "Formal Language & Automata Theory",
+          "Design & Analysis of Algorithms",
+          "Biology",
+          "Environmental Sciences",
+          "Computer Architecture Lab",
+          "Design & Analysis of Algorithms Lab"
+        ],
+        "Semester 5": [
+          "Software Engineering",
+          "Compiler Design",
+          "Operating Systems",
+          "Object Oriented Programming",
+          "Introduction to Industrial Management",
+          { "Elective-I": [ "Theory of Computation", "Artificial Intelligence", "Advanced Computer Architecture", "Computer Graphics" ] },
+          "Constitution of India / Essence of Indian Knowledge Tradition",
+          "Software Engineering Lab",
+          "Operating Systems Lab",
+          "Object Oriented Programming Lab"
+        ],
+        "Semester 6": [
+          "Database Management Systems",
+          "Computer Networks",
+          { "Elective-II": [ "Advanced Algorithms", "Distributed Database Management System", "Signals & Systems", "Image Processing" ] },
+          { "Elective-III": [ "Parallel and Distributed Algorithms", "Data Warehousing & Data Mining", "Human Computer Interaction", "Pattern Recognition" ] },
+          { "Open Elective-I": [ "Numerical Methods", "Human Resource Development and Organizational Behavior" ] },
+          "Research Methodology",
+          "Database Management Systems Lab",
+          "Computer Networks Lab"
+        ],
+        "Semester 7": [
+          { "Elective-IV": [ "Quantum Computing", "Cloud Computing", "Digital Signal Processing", "Multi-agent Intelligent Systems", "Machine Learning" ] },
+          { "Elective-V": [ "Neural Networks and Deep Learning", "Soft Computing", "Ad-Hoc and Sensor Networks", "Information Theory and Coding", "Cyber Security" ] },
+          { "Open Elective-II": [ "Operations Research", "Multimedia Systems", "Introduction to Philosophical Thoughts" ] },
+          "Project Management and Entrepreneurship",
+          "Project-II"
+        ],
+        "Semester 8": [
+          { "Elective-VI": [ "Signals and Networks", "Cryptography & Network Security", "Speech and Natural Language Processing", "Web and Internet Technology", "Internet of Things" ] },
+          { "Open Elective-III": [ "Big Data Analysis", "Cyber Law and Ethics", "Mobile Computing", "Robotics", "Soft Skill & Interpersonal Communication" ] },
+          { "Open Elective-IV": [ "E-Commerce and ERP", "Micro-electronics and VLSI Design", "Economic Policies in India" ] },
+          "Project-III"
+        ]
+      }
+    },
+    "CSE-AIML": {
+      "full_name": "Computer Science & Engineering (Artificial Intelligence and Machine Learning)",
+      "course_code": "308",
+      "batches": ["aiml1", "aiml2", "aiml3"],
+      "active_sessions": ["2020-2021"],
+      "curriculum": {
+        "Semester 3": [
+          "Analog and Digital Electronics",
+          "Data Structure & Algorithms",
+          "Computer Organization",
+          "Linear Algebra",
+          "Economics for Engineers",
+          "Data Structure & Algorithms Lab",
+          "Analog and Digital Electronics Lab",
+          "Computer Organization Lab",
+          "IT Workshop (Python I)"
+        ],
+        "Semester 4": [
+          "Discrete Mathematics",
+          "Artificial Intelligence",
+          "Optimization Techniques",
+          "Design and Analysis of Algorithm",
+          "Biology",
+          "Environmental Science",
+          "Artificial Intelligence Lab",
+          "Design and Analysis of Algorithm Lab",
+          "Python II / R Programming Language Lab"
+        ],
+        "Semester 5": [
+          "Probability and Statistics",
+          "Operating System",
+          "Object Oriented Programming",
+          "Introduction to Machine Learning",
+          "Introduction to Industrial Management",
+          { "Elective-I": [ "Cloud Computing", "Pattern Recognition", "Graph Theory" ] },
+          "Operating System Lab",
+          "Object Oriented Programming & Java Lab",
+          "Machine Learning Lab"
+        ],
+        "Semester 6": [
+          "Machine Learning Applications",
+          "Deep Learning",
+          "Soft Computing",
+          "Computer Networks",
+          { "Elective-II": [ "Big Data Analytics", "Data Mining", "Distributed System", "Game Theory" ] },
+          { "Open Elective-I": [ "Database Management System", "Human Computer Interaction", "Neural Network", "Cryptography and Network Security" ] },
+          "Machine Learning Applications Lab",
+          "Soft Computing Lab",
+          "Computer Networks Lab"
+        ],
+        "Semester 7": [
+          { "Elective-III": [ "Social Network Analysis", "Computer Vision", "Quantum Computing", "Multi Agent Intelligent System" ] },
+          { "Elective-IV": [ "Ecommerce and ERP", "Information Theory and Coding", "Computer Aided Design", "Digital Signal Processing" ] },
+          { "Open Elective-II": [ "Internet of Things", "Bio Informatics", "Robotics", "Compiler Design" ] },
+          "Project Management and Entrepreneurship",
+          "Project-I"
+        ],
+        "Semester 8": [
+          { "Elective-V": [ "Natural Language Processing", "Cyber Law and Ethics", "Mobile Computing" ] },
+          { "Open Elective-III": [ "Economic Policies in India", "Microelectronics and VLSI", "Software Engineering" ] },
+          { "Open Elective-IV": [ "Organization Behaviour", "Research Methodology", "Soft skill and Interpersonal Communication" ] },
+          "Project-II"
+        ]
+      }
+    },
+    "CSBS": {
+      "full_name": "Computer Science and Business Systems",
+      "course_code": "311",
+      "batches": ["csbs1", "csbs2"],
+      "active_sessions": ["2020-2021"],
+      "curriculum": {
+        "Semester 3": [
+          "Digital Electronics",
+          "Data Structure & Algorithms",
+          "Discrete Mathematics",
+          "Economics for Engineers",
+          "Computational Statistics",
+          "Digital Electronics Lab",
+          "Data Structure & Algorithms Lab",
+          "Computational Statistics Lab"
+        ],
+        "Semester 4": [
+          "Introduction to Innovation, IP Management & Entrepreneurship",
+          "Formal Language & Automata Theory",
+          "Object Oriented Programming",
+          "Computer Organization & Architecture",
+          "Biology",
+          "Environmental Science",
+          "Design Thinking",
+          "Object Oriented Programming with C++ Lab",
+          "Computer Organization & Architecture Lab"
+        ],
+        "Semester 5": [
+          "Computer Networks",
+          "Software Engineering",
+          "Database Management Systems",
+          "Business Strategy",
+          "Machine Learning",
+          { "Elective-I": [ "Computer Graphics", "Artificial Intelligence", "E-Commerce and ERP" ] },
+          "Constitution of India / Essence of Indian Knowledge Tradition",
+          "Computer Networks Lab",
+          "Database Management Systems Lab",
+          "Software Engineering Lab"
+        ],
+        "Semester 6": [
+          "Design & Analysis of Algorithms",
+          "Operating Systems",
+          "Pattern Recognition",
+          { "Elective-II": [ "Information Security", "Human Computer Interaction", "Cloud Computing", "Data Mining and Analytics" ] },
+          { "Elective-III": [ "Compiler Design", "Image Processing", "Robotics and Embedded Systems", "Software Design with UML" ] },
+          { "Open Elective-I": [ "Big Data Analytics", "Cyber Law Ethics", "Mobile Computing", "Bioinformatics", "Numerical Methods" ] },
+          "Introduction to Industrial Management",
+          "Design Analysis & Algorithm Lab",
+          "Operating Systems Lab"
+        ],
+        "Semester 7": [
+          { "Elective-IV": [ "Introduction to IoT", "Cognitive Science & Analytics", "Advanced Social, Text and Media Analytics" ] },
+          "Financial & Cost Accounting",
+          "Human Resource Management",
+          "IT Workshop (Skylab/Matlab)",
+          "Project Evaluation-I"
+        ],
+        "Semester 8": [
+          { "Elective-V": [ "Cryptology", "Quantum Computing" ] },
+          { "Open Elective-II": [ "Business Communication & Value Science", "Financial Management", "Computational Finance & Modeling", "Behavioral Economics" ] },
+          "Services Science & Service Operational Management",
+          "Research Methodologies",
+          "Project Evaluation-II"
+        ]
+      }
+    },
+    "IT": {
+      "full_name": "Information Technology",
+      "course_code": "002",
+      "batches": ["it1", "it2", "it3"],
+      "active_sessions": ["2018-2019", "2023-2024"],
+      "curriculum": {
+        "Semester 3": [
+          "Analog and Digital Electronics",
+          "Data Structure & Algorithms",
+          "Computer Organisation",
+          "Mathematics-III",
+          "Economics for Engineers",
+          "IT Workshop (Sci Lab/MATLAB/Python/R)",
+          "Analog and Digital Electronics Lab",
+          "Data Structure & Algorithms Lab",
+          "Computer Organisation Lab"
+        ],
+        "Semester 4": [
+          "Discrete Mathematics",
+          "Computer Architecture",
+          "Formal Language & Automata Theory",
+          "Design & Analysis of Algorithms",
+          "Biology",
+          "Environmental Sciences",
+          "Computer Architecture Lab",
+          "Design & Analysis of Algorithms Lab"
+        ],
+        "Semester 5": [
+          "Software Engineering",
+          "Compiler Design",
+          "Operating Systems",
+          "Object Oriented Programming",
+          "Introduction to Industrial Management",
+          { "Elective-I": [ "Theory of Computation", "Artificial Intelligence", "Advanced Computer Architecture", "Computer Graphics" ] },
+          "Constitution of India / Essence of Indian Knowledge Tradition",
+          "Software Engineering Lab",
+          "Operating Systems Lab",
+          "Object Oriented Programming Lab"
+        ],
+        "Semester 6": [
+          "Database Management Systems",
+          "Computer Networks",
+          { "Elective-II": [ "Advanced Algorithms", "Distributed Database Management System", "Signals & Systems", "Image Processing" ] },
+          { "Elective-III": [ "Parallel and Distributed Algorithms", "Data Warehousing & Data Mining", "Human Computer Interaction", "Pattern Recognition" ] },
+          { "Open Elective-I": [ "Numerical Methods", "Human Resource Development and Organizational Behavior" ] },
+          "Research Methodology",
+          "Database Management Systems Lab",
+          "Computer Networks Lab"
+        ],
+        "Semester 7": [
+          { "Elective-IV": [ "Quantum Computing", "Cloud Computing", "Digital Signal Processing", "Multi-agent Intelligent Systems", "Machine Learning" ] },
+          { "Elective-V": [ "Neural Networks and Deep Learning", "Soft Computing", "Ad-Hoc and Sensor Networks", "Information Theory and Coding", "Cyber Security" ] },
+          { "Open Elective-II": [ "Operations Research", "Multimedia Systems", "Introduction to Philosophical Thoughts" ] },
+          "Project Management and Entrepreneurship",
+          "Project-II"
+        ],
+        "Semester 8": [
+          { "Elective-VI": [ "Signals and Networks", "Cryptography & Network Security", "Speech and Natural Language Processing", "Internet of Things", "Remote Sensing and GIS" ] },
+          { "Open Elective-III": [ "Big Data Analysis", "Cyber Law and Ethics", "Mobile Computing", "Bioinformatics", "Robotics" ] },
+          { "Open Elective-IV": [ "E-Commerce and ERP", "Micro-electronics and VLSI Design", "Economic Policies in India" ] },
+          "Project-III"
+        ]
+      }
+    },
+    "ECE": {
+      "full_name": "Electronics & Communication Engineering",
+      "course_code": "003",
+      "batches": ["ece1", "ece2", "ece3"],
+      "active_sessions": ["2018-2019"],
+      "curriculum": {
+        "Semester 3": [
+          "Electronic Devices",
+          "Digital System Design",
+          "Signals and Systems",
+          "Network Theory",
+          "Data Structure & Algorithm",
+          "Probability & Statistics",
+          "Electronic Devices Lab",
+          "Digital System Design Lab",
+          "Data Structure Lab",
+          "Environmental Science (Non-credit)"
+        ],
+        "Semester 4": [
+          "Analog Communication",
+          "Analog Electronic Circuits",
+          "Microprocessor & Microcontrollers",
+          "Design and Analysis of Algorithm",
+          "Numerical Methods",
+          "Biology for Engineers",
+          "Analog Communication Lab",
+          "Analog Electronic Circuits Lab",
+          "Microprocessor & Microcontrollers Lab",
+          "Numerical Methods Lab",
+          "Soft Skill Development Lab"
+        ],
+        "Semester 5": [
+          "Electromagnetic Waves",
+          "Computer Architecture",
+          "Digital Communication & Stochastic Process",
+          "Digital Signal Processing",
+          { "Elective-I": [ "Nano Electronics", "Speech and Audio Processing", "Power Electronics", "Scientific Computing" ] },
+          { "Open Elective-I": [ "Soft Skill and Interpersonal Communication", "Cyber Law & Intellectual Property Rights", "Human Resource Management" ] },
+          "Electromagnetic Wave Lab",
+          "Digital Communication Lab",
+          "Digital Signal Processing Lab",
+          "Effective Technical Communication (Non-credit)"
+        ],
+        "Semester 6": [
+          "Control System & Instrumentation",
+          "Computer Network",
+          { "Elective-II": [ "Introduction to MEMS", "Bio-Medical Electronics", "CMOS VLSI Design", "Information Theory & Coding" ] },
+          { "Open Elective-II": [ "Electronic Measurements and Measuring Instruments", "Operating System", "Object Oriented Programming" ] },
+          "Economics for Engineers",
+          "Computer Network Lab",
+          "Control System and Instrumentation Lab",
+          "Mini Project / Electronic Design Workshop",
+          "Universal Human Values (Non-credit)"
+        ],
+        "Semester 7": [
+          { "Elective-III": [ "Microwave Theory and Techniques", "Satellite Communication", "Mobile Communication and Networks" ] },
+          { "Elective-IV": [ "Adaptive Signal Processing", "Digital Image and Video Processing", "Neural Network and Fuzzy Logic Control" ] },
+          { "Elective-V": [ "Embedded System", "Wireless Sensor Networks", "Wavelet Transforms" ] },
+          { "Open Elective-III": [ "Web Technology", "Optimisation Technique", "Entrepreneurship" ] },
+          "Principles of Management",
+          "Industrial Training (6th & 7th Semester Break)",
+          "Project Stage-I"
+        ],
+        "Semester 8": [
+          { "Elective-VI": [ "Antennas and Propagation", "Fibre Optic Communication", "Error Correcting Codes" ] },
+          { "Elective-VII": [ "Mixed Signal Design", "Industrial Automation and Control", "VLSI Design Automation" ] },
+          { "Open Elective-IV": [ "Internet of Things (IoT)", "Big Data Analysis", "Cyber Security" ] },
+          { "Open Elective-V": [ "Artificial Intelligence", "Microwave Integrated Circuits", "Organisational Behaviour" ] },
+          "Project Stage-II",
+          "Grand Viva"
+        ]
+      }
+    },
+    "EE": {
+      "full_name": "Electrical Engineering",
+      "course_code": "016",
+      "batches": ["ee1", "ee2"],
+      "active_sessions": ["2018-2019"],
+      "curriculum": {
+        "Semester 3": [
+          "Electric Circuit Theory",
+          "Analog Electronics",
+          "Electromagnetic Field Theory",
+          "Engineering Mechanics",
+          "Mathematics-III",
+          "Biology for Engineers",
+          "Indian Constitution (Non-credit)",
+          "Electric Circuit Theory Laboratory",
+          "Analog Electronics Laboratory",
+          "Numerical Methods Laboratory"
+        ],
+        "Semester 4": [
+          "Electric Machine-I",
+          "Digital Electronics",
+          "Electrical and Electronics Measurement",
+          "Thermal Power Engineering",
+          "Values and Ethics in Profession",
+          "Environmental Science (Non-credit)",
+          "Electric Machine-I Laboratory",
+          "Digital Electronics Laboratory",
+          "Electrical and Electronic Measurement Laboratory",
+          "Thermal Power Engineering Laboratory"
+        ],
+        "Semester 5": [
+          "Electric Machine-II",
+          "Power System-I",
+          "Control System",
+          "Power Electronics",
+          { "Elective-I": [ "High Voltage Engineering", "Power Plant Engineering", "Renewable & Non-conventional Energy" ] },
+          { "Open Elective-I": [ "Data Structure & Algorithm", "Object Oriented Programming", "Computer Organization & Architecture" ] },
+          "Electric Machine-II Laboratory",
+          "Power System-I Laboratory",
+          "Control System Laboratory",
+          "Power Electronics Laboratory"
+        ],
+        "Semester 6": [
+          "Power System-II",
+          "Microprocessor & Microcontroller",
+          { "Elective-II": [ "Digital Control System", "HVDC Transmission", "Electrical Machine Design" ] },
+          { "Elective-III": [ "Electrical and Hybrid Vehicle", "Power Quality & FACTS", "Industrial Electrical Systems" ] },
+          { "Open Elective-II": [ "Digital Signal Processing", "Communication Engineering", "VLSI & Microelectronics" ] },
+          "Economics for Engineers",
+          "Power System-II Laboratory",
+          "Microprocessor & Microcontroller Laboratory",
+          "Electrical & Electronic Design Laboratory",
+          "Summer Internship (3-week, after 6th semester)"
+        ],
+        "Semester 7": [
+          "Electric Drive",
+          { "Elective-IV": [ "Control System Design", "Electrical Energy Conservation & Auditing", "Power Generation Economics" ] },
+          { "Open Elective-III": [ "Artificial Intelligence", "Internet of Things", "Computer Graphics" ] },
+          { "Open Elective-IV": [ "Embedded System", "Digital Image Processing", "Computer Network" ] },
+          "Principle of Management",
+          "Electric Drive Laboratory",
+          "Project Stage-I",
+          "Seminar"
+        ],
+        "Semester 8": [
+          "Utilization of Electric Power",
+          { "Elective-V": [ "Line-commutated and Active PWM Rectifiers", "Power System Dynamics & Control", "Advanced Electric Drives", "Industrial Automation and Control" ] },
+          { "Open Elective-V": [ "Soft Computing Techniques", "Biomedical Instrumentation", "Introduction to Machine Learning", "Sensors and Transducers" ] },
+          "Project Stage-II"
+        ]
+      }
+    },
+    "EEE": {
+      "full_name": "Electrical & Electronics Engineering",
+      "course_code": "028",
+      "batches": ["eee1", "eee2"],
+      "active_sessions": ["2018-2019"],
+      "curriculum": {
+        "Semester 3": [
+          "Electric Circuit Theory",
+          "Analog Electronics",
+          "Electromagnetic Field Theory",
+          "Engineering Mechanics",
+          "Mathematics-III",
+          "Biology for Engineers",
+          "Indian Constitution (Non-credit)",
+          "Electric Circuit Theory Laboratory",
+          "Analog Electronics Laboratory",
+          "Numerical Methods Laboratory"
+        ],
+        "Semester 4": [
+          "Electric Machine-I",
+          "Digital Electronics",
+          "Electrical and Electronic Measurement",
+          "Thermal Power Engineering",
+          "Values and Ethics in Profession",
+          "Environmental Science (Non-credit)",
+          "Electric Machine-I Laboratory",
+          "Digital Electronics Laboratory",
+          "Electrical and Electronic Measurement Laboratory",
+          "Thermal Power Engineering Laboratory"
+        ],
+        "Semester 5": [
+          "Electric Machine-II",
+          "Power System-I",
+          "Control System",
+          "Power Electronics",
+          { "Elective-I": [ "High Voltage Engineering", "Power Plant Engineering", "Renewable & Non Conventional Energy" ] },
+          { "Open Elective-I": [ "Data Structure & Algorithm", "Object Oriented Programming", "Computer Organization" ] },
+          "Electric Machine-II Laboratory",
+          "Control System Laboratory",
+          "Power Electronics Laboratory"
+        ],
+        "Semester 6": [
+          "Power System-II",
+          "Microprocessor & Microcontroller",
+          { "Elective-II": [ "Nano Electronics", "Electrical Machine Design", "VLSI & Microelectronics" ] },
+          { "Elective-III": [ "Electrical & Hybrid Vehicle", "Power Quality & FACTS", "Industrial Electrical Systems" ] },
+          { "Open Elective-II": [ "Artificial Intelligence", "Database Management Systems", "Analytical Instrumentation" ] },
+          "Economics for Engineers",
+          "Power System Laboratory",
+          "Microprocessor & Microcontroller Laboratory",
+          "Electrical & Electronic Design Laboratory",
+          "Summer Internship (3-week, after 6th semester)"
+        ],
+        "Semester 7": [
+          "Analog and Digital Communication",
+          { "Elective-IV": [ "Electric Drive", "Digital Control System", "HVDC Transmission System" ] },
+          { "Open Elective-III": [ "Embedded System", "Computer Network", "Introduction to Machine Learning" ] },
+          { "Open Elective-IV": [ "Internet of Things", "Computer Graphics", "Soft Computing Techniques" ] },
+          "Principle of Management",
+          "Analog and Digital Communication Laboratory",
+          "Project Stage-I",
+          "Seminar"
+        ],
+        "Semester 8": [
+          "Digital Signal Processing",
+          { "Elective-V": [ "Utilization of Electric Power", "Advanced Electric Drives", "Power System Dynamics and Control", "Industrial Automation and Control" ] },
+          { "Open Elective-V": [ "Digital Image Processing", "Biomedical Instrumentation", "Cryptography and Network Security", "Sensors and Transducers" ] },
+          "Digital Signal Processing Laboratory",
+          "Project Stage-II"
+        ]
+      }
+    },
+    "ME": {
+      "full_name": "Mechanical Engineering",
+      "course_code": "007",
+      "batches": ["me1", "me2"],
+      "active_sessions": ["2018-2019", "2023-2024"],
+      "curriculum": {
+        "Semester 3": [
+          "Mathematics III",
+          "Biology",
+          "Basic Electronics Engineering",
+          "Engineering Mechanics",
+          "Thermodynamics",
+          "Manufacturing Processes",
+          "Practice of Manufacturing Processes"
+        ],
+        "Semester 4": [
+          "Materials Engineering",
+          "Applied Thermodynamics",
+          "Fluid Mechanics & Fluid Machines",
+          "Strength of Materials",
+          "Metrology and Instrumentation",
+          "Practice of Manufacturing Processes and Systems Laboratory",
+          "Machine Drawing-I",
+          "Environmental Science (Non-credit)"
+        ],
+        "Semester 5": [
+          "Heat Transfer",
+          "Solid Mechanics",
+          "Kinematics & Theory of Machines",
+          "Effective Technical Communication",
+          "Essence of Indian Knowledge Tradition (Non-credit)",
+          "Mechanical Engineering Laboratory I (Thermal)",
+          "Machine Drawing-II",
+          "Project-I (Summer Internship)"
+        ],
+        "Semester 6": [
+          "Manufacturing Technology",
+          "Design of Machine Elements",
+          { "Elective-I": [ "Internal Combustion Engines and Gas Turbines", "Refrigeration and Air Conditioning", "Turbo Machinery", "Fluid Power Control", "Advanced Fluid Mechanics" ] },
+          { "Elective-II": [ "Composite Materials", "Mechatronics" ] },
+          { "Elective-II (Manufacturing)": [ "Robotics", "Material Handling", "Principles and Practices of Management" ] },
+          "Operations Research",
+          "Constitution of India (Non-credit)",
+          "Mechanical Engineering Laboratory II (Design)",
+          "Project-II (Summer Internship)"
+        ],
+        "Semester 7": [
+          "Advanced Manufacturing Technology",
+          { "Elective-III": [ "Automobile Engineering", "Gas Dynamics and Jet Propulsion", "Computational Fluid Dynamics", "Elements of Atmospheric Fluid Dynamics" ] },
+          { "Elective-IV (Design)": [ "Selection and Testing of Materials", "Mechanical Vibration", "Finite Element Analysis" ] },
+          { "Elective-IV (Manufacturing)": [ "Advanced Welding Technology", "Quantity Production Methods", "CAD/CAM" ] },
+          { "Open Elective-I": [ "Industrial Engineering", "Project Management", "Introduction to Product Design and Development", "Non-conventional Energy Sources", "Biomechanics and Biomaterials", "Computational Methods in Engineering", "Artificial Intelligence (AI)", "Machine Learning", "Water Resource Engineering" ] },
+          "Economics for Engineers",
+          "Mechanical Engineering Laboratory III (Manufacturing)",
+          "Project-III"
+        ],
+        "Semester 8": [
+          { "Elective-V (Thermo-Fluid)": [ "Analysis and Performance of Fluid Machines", "Power Plant Engineering", "Cryogenics", "Introduction to Wind Engineering" ] },
+          { "Elective-V (Design)": [ "Tribology", "3D Printing and Design" ] },
+          { "Elective-VI (Manufacturing)": [ "Micro and Nano Manufacturing", "Process Planning and Cost Estimation", "Maintenance Engineering" ] },
+          { "Open Elective-II": [ "Total Quality Management", "Entrepreneurship Development", "Safety and Occupational Health", "Industrial Pollution and Control", "Energy Conservation and Management", "Waste to Energy- An Overview", "Automation & Control", "Internet of Things (IoT)", "Block Chain", "Cyber Security", "Quantum Computing", "Data Sciences", "Virtual Reality (VR)" ] },
+          { "Open Elective-III": [ "Same basket as Open Elective-II" ] },
+          "Project-IV",
+          "Comprehensive Viva"
+        ]
+      }
+    }
+  }
+}
