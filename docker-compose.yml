@@ -14,10 +14,10 @@ services:
       - ./db-scripts/init-schema.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres -d siksha_saathi"]
-      interval: 3s
-      timeout: 3s
+      interval: 2s
+      timeout: 2s
       retries: 10
-      start_period: 5s
+      start_period: 2s
     networks:
       - siksha_network
 
@@ -38,10 +38,10 @@ services:
       - model_cache:/root/.cache/huggingface
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://localhost:8100/health || exit 1"]
-      interval: 5s
-      timeout: 3s
-      retries: 25
-      start_period: 15s
+      interval: 2s
+      timeout: 2s
+      retries: 20
+      start_period: 4s
     networks:
       - siksha_network
 
