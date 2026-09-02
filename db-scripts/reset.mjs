@@ -97,9 +97,9 @@ async function reset() {
     await pool.end();
   }
 
-  // Re-run init schema
-  console.log('\n🔄 Re-initializing clean schema...');
-  execSync('node db-scripts/init-schema.mjs', { stdio: 'inherit', cwd: rootDir });
+  // Re-run schema push via Drizzle Kit
+  console.log('\n🔄 Re-initializing clean schema via Drizzle Kit...');
+  execSync('npx drizzle-kit push', { stdio: 'inherit', cwd: rootDir });
 }
 
 reset();

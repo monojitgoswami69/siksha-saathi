@@ -243,7 +243,7 @@ docker compose up -d
 ```
 
 This starts all 4 coordinated services:
-1. **PostgreSQL** on `:5432` with automated schema initialization from `db-scripts/init-schema.sql`
+1. **PostgreSQL** on `:5432` with extensions from `db-scripts/init-extensions.sql` and schema managed via Drizzle ORM (`schema.ts`)
 2. **Embedding & Reranker Service** on `:8100` (`multilingual-e5-small` + `ms-marco-MiniLM-L-6-v2`)
 3. **Ingestion Worker** (background document extraction, OCR & indexing)
 4. **Next.js Web UI** on `:3000` with hot-reload support

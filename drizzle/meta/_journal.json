@@ -8,6 +8,13 @@
       "when": 1787122758791,
       "tag": "0000_yellow_dark_phoenix",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1788392351234,
+      "tag": "0001_confused_bloodstrike",
+      "breakpoints": true
     }
   ]
 }
