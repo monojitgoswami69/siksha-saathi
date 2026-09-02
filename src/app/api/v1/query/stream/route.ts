@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getAuthUser } from '@/lib/server/auth';
 import { query } from '@/lib/server/db';
-import { getQueryEmbedding, formatVector, getEmbeddingColumn } from '@/lib/server/embeddingRouter';
+import { getQueryEmbedding, getEmbeddingColumn } from '@/lib/server/embeddingRouter';
 import { streamSocraticChat } from '@/lib/server/llm';
 import { logStudentQuery } from '@/lib/server/audit';
+import { executeHybridRetrieval } from '@/lib/server/hybridRetrieval';
 
 export async function POST(req: NextRequest) {
   try {
@@ -23,152 +24,54 @@ export async function POST(req: NextRequest) {
       file_name: reqFileName,
       subject: reqSubject,
       history = [],
-      top_k = 5,
+      top_k = 10,
     } = body;
 
     if (!message || typeof message !== 'string') {
       return NextResponse.json({ detail: 'Message string is required' }, { status: 400 });
     }
 
-    const SIMILARITY_THRESHOLD = parseFloat(process.env.RAG_SIMILARITY_THRESHOLD || '0.25');
-    const topK = Math.min(Math.max(1, top_k), 10);
-
-    // Parallel embedding generation & student profile lookup
-    const embCol = getEmbeddingColumn(); // 'embedding' (legacy) or 'embedding_local' (local)
-    const [queryEmbedding, studentRes] = await Promise.all([
-      getQueryEmbedding(message),
-      query('SELECT stream, sem, section FROM student_users WHERE id = $1;', [user.uid]).catch(
-        () => ({ rowCount: 0, rows: [] })
-      ),
-    ]);
-
-    // Resolve student scope (request override takes precedence, else DB profile)
+    // Role-based scope enforcement: students are pinned to their profile
     let studentStream = reqStream;
     let studentSem = reqSem;
     let studentSection = reqSection;
-    if (studentRes.rowCount && studentRes.rowCount > 0) {
+
+    if (user.role === 'student') {
+      const studentRes = await query(
+        `SELECT stream, sem, section FROM student_users WHERE id = $1 LIMIT 1;`,
+        [user.uid]
+      );
+      if (studentRes.rows.length === 0) {
+        return NextResponse.json({ detail: 'Student profile not found' }, { status: 404 });
+      }
       const profile = studentRes.rows[0] as any;
       studentStream = studentStream || profile.stream;
       studentSem = studentSem || profile.sem;
       studentSection = studentSection || profile.section;
     }
 
-    const vectorStr = formatVector(queryEmbedding);
-    const cleanSearchText = message.replace(/[^\w\s]/gi, ' ').trim() || message;
+    const queryEmbedding = await getQueryEmbedding(message);
+    const embCol = getEmbeddingColumn();
 
-    // ---- Build scope filter (applied to BOTH vector + text search + fallback) ----
-    // document_id is AND-ed with scope (never bypasses it) to prevent scope escape.
-    let whereFilter = `WHERE c.${embCol} IS NOT NULL`;
-    const params: any[] = [];
-    let pIdx = 1;
-
-    if (studentStream && studentStream !== 'All') {
-      whereFilter += ` AND (LOWER(c.stream) = LOWER($${pIdx}) OR c.stream = 'General' OR c.stream IS NULL)`;
-      params.push(studentStream);
-      pIdx++;
-    }
-    if (studentSem && studentSem !== 'All') {
-      whereFilter += ` AND (c.semester = $${pIdx} OR c.semester = 'General' OR c.semester IS NULL)`;
-      params.push(studentSem);
-      pIdx++;
-    }
-    if (studentSection && studentSection !== 'All') {
-      whereFilter += ` AND (LOWER(c.section) = LOWER($${pIdx}) OR c.section = 'General' OR c.section IS NULL)`;
-      params.push(studentSection);
-      pIdx++;
-    }
-    if (reqSubject && reqSubject !== 'All Subjects') {
-      whereFilter += ` AND (LOWER(c.subject) = LOWER($${pIdx}) OR c.subject = 'General' OR c.subject IS NULL)`;
-      params.push(reqSubject);
-      pIdx++;
-    }
-    if (reqFileName) {
-      whereFilter += ` AND LOWER(c.file_name) = LOWER($${pIdx})`;
-      params.push(reqFileName);
-      pIdx++;
-    }
-    if (reqDocId) {
-      whereFilter += ` AND c.document_id = $${pIdx}`;
-      params.push(reqDocId);
-      pIdx++;
-    }
-
-    // The hybrid SQL reuses $1 (vector) and $2 (text) as the first two params;
-    // scope params must follow them. We shift scope params to start at index 3.
-    const hybridParams: any[] = [vectorStr, cleanSearchText, ...params];
-    // LIMIT param comes AFTER all scope params: position = 3 + params.length
-    const hybridPIdx = 3 + params.length;
-    let scopeClauseForHybrid = whereFilter;
-    // Re-number scope params from 3 onward
-    scopeClauseForHybrid = whereFilter.replace(/\$(\d+)/g, (_, n) => {
-      const num = parseInt(n, 10);
-      // scope params were numbered starting at 1 in `params`; now they start at 3
-      return `$${num + 2}`;
+    // Execute full Hybrid RAG Retrieval Pipeline (Top 25 Vector + Top 15 Keyword -> RRF -> Rerank -> Top 10)
+    const retrievalResult = await executeHybridRetrieval({
+      queryText: message,
+      queryVector: queryEmbedding,
+      scope: {
+        stream: studentStream && studentStream !== 'All' ? studentStream : undefined,
+        semester: studentSem && studentSem !== 'All' ? studentSem : undefined,
+        section: studentSection && studentSection !== 'All' ? studentSection : undefined,
+        subject: reqSubject && reqSubject !== 'All Subjects' ? reqSubject : undefined,
+        fileName: reqFileName || undefined,
+        documentId: reqDocId || undefined,
+      },
+      vectorLimit: 25,
+      keywordLimit: 15,
+      topK: top_k || 10,
+      embeddingCol: embCol,
     });
 
-    const hybridSql = `
-      WITH vector_search AS (
-        SELECT
-          c.id,
-          ROW_NUMBER() OVER (ORDER BY c.${embCol} <=> $1) AS v_rank,
-          (1 - (c.${embCol} <=> $1)) AS v_sim
-        FROM document_chunks c
-        ${scopeClauseForHybrid}
-        LIMIT 25
-      ),
-      text_search AS (
-        SELECT
-          c.id,
-          ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('simple', c.raw_content), plainto_tsquery('simple', $2)) DESC) AS t_rank,
-          ts_rank_cd(to_tsvector('simple', c.raw_content), plainto_tsquery('simple', $2)) AS t_score
-        FROM document_chunks c
-        ${scopeClauseForHybrid} AND to_tsvector('simple', c.raw_content) @@ plainto_tsquery('simple', $2)
-        LIMIT 25
-      )
-      SELECT
-        c.id, c.document_id, c.chunk_index, c.total_chunks, c.raw_content,
-        c.page_start, c.page_end, c.paragraph_id, c.chunk_type, c.char_start, c.char_end,
-        c.file_name, c.title, c.stream, c.semester, c.section, c.subject, c.module,
-        COALESCE(v.v_sim, 0) AS similarity,
-        COALESCE(t.t_score, 0) AS text_score,
-        (COALESCE(1.0 / (60 + v.v_rank), 0.0) + COALESCE(1.0 / (60 + t.t_rank), 0.0)) AS rrf_score
-      FROM document_chunks c
-      LEFT JOIN vector_search v ON c.id = v.id
-      LEFT JOIN text_search t ON c.id = t.id
-      WHERE v.id IS NOT NULL OR t.id IS NOT NULL
-      ORDER BY rrf_score DESC, similarity DESC
-      LIMIT $${hybridPIdx}::int;
-    `;
-    hybridParams.push(topK);
-
-    let searchResults: any[] = [];
-    try {
-      const res = await query(hybridSql, hybridParams);
-      searchResults = res.rows.filter(
-        (r) => r.similarity > SIMILARITY_THRESHOLD || r.text_score >= 0.05
-      );
-    } catch (e: any) {
-      console.warn('Hybrid search fallback to scoped vector search:', e.message);
-      try {
-        // Retain scope (no escape): re-number params for fallback (vector first, then scope)
-        const fallbackScope = whereFilter.replace(/\$(\d+)/g, (_, n) => `$${parseInt(n, 10) + 1}`);
-        const fallbackParams: any[] = [vectorStr, ...params, topK];
-        const fallbackSql = `
-          SELECT id, document_id, chunk_index, total_chunks, raw_content,
-                 page_start, page_end, paragraph_id, chunk_type, char_start, char_end,
-                 file_name, title, stream, semester, section, subject, module,
-                 1 - (c.${embCol} <=> $1) AS similarity
-          FROM document_chunks c
-          ${fallbackScope}
-          ORDER BY c.${embCol} <=> $1 LIMIT $${params.length + 2}::int;
-        `;
-        const res = await query(fallbackSql, fallbackParams);
-        searchResults = res.rows.filter((r) => r.similarity > SIMILARITY_THRESHOLD);
-      } catch (err: any) {
-        console.error('Vector fallback search error:', err.message);
-        searchResults = [];
-      }
-    }
+    const searchResults = retrievalResult.chunks;
 
     // Sources payload: ordinal n maps to context block order below
     const sources = searchResults.map((chunk, i) => ({
@@ -185,6 +88,7 @@ export async function POST(req: NextRequest) {
       section: chunk.section || 'General',
       chunk_type: chunk.chunk_type || 'text',
       similarity: parseFloat((chunk.similarity || 0).toFixed(3)),
+      rerank_score: chunk.rerank_score != null ? parseFloat(chunk.rerank_score.toFixed(4)) : undefined,
     }));
 
     // Numbered context blocks so the LLM can cite [[#n]] ordinals
@@ -218,6 +122,13 @@ export async function POST(req: NextRequest) {
     }
 
     const topChunk = searchResults[0];
+
+    // Optimization 3: Reranker score gating to prevent hallucinations on out-of-scope questions
+    const isOutOfScope = topChunk?.rerank_score != null && topChunk.rerank_score < -3.0;
+    const finalContextBlock = isOutOfScope
+      ? `[NOTICE TO ASSISTANT: The student's question appears outside the course curriculum. The top retrieved chunk had a very low relevance score (${topChunk.rerank_score}). Politely inform the student that this topic is not covered in their syllabus or enrolled course materials, and guide them back to their subjects, rather than guessing or fabricating an answer.]\n\n${contextBlock}`
+      : contextBlock;
+
     // Log the query (one row) and capture its id so we can link every cited chunk below.
     const queryLogId = await logStudentQuery({
       userId: user.uid,
@@ -232,7 +143,7 @@ export async function POST(req: NextRequest) {
     // Stream Socratic chat response
     const stream = await streamSocraticChat({
       userMessage: message,
-      contextBlock,
+      contextBlock: finalContextBlock,
       conversationHistory: history,
     });
 

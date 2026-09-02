@@ -21,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .config import Settings
 from .model import load_model, is_ready, get_model_info, encode_single, encode_texts
+from .reranker import load_reranker, is_reranker_ready, get_reranker_info, rerank_documents
 from .cache import EmbeddingCache
 from .schemas import (
     EmbedRequest,
@@ -29,6 +30,9 @@ from .schemas import (
     BatchEmbedResponse,
     HealthResponse,
     MetricsResponse,
+    RerankRequest,
+    RerankResponse,
+    RerankItem,
 )
 
 logging.basicConfig(
@@ -50,29 +54,31 @@ _total_requests = 0
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """
-    Lifespan handler: load the model BEFORE accepting requests.
+    Lifespan handler: load the models BEFORE accepting requests.
 
     The /health endpoint returns "starting" until this completes.
-    After load_model() returns, /health returns "ready" and the
-    server begins accepting /embed requests.
+    After models are loaded, /health returns "ready" and the
+    server begins accepting /embed and /rerank requests.
     """
-    logger.info("🚀 Starting embedding service...")
+    logger.info("🚀 Starting embedding & reranker service...")
     logger.info("   Model: %s", settings.model_name)
     logger.info("   Dim: %d", settings.model_dim)
+    logger.info("   Reranker Model: %s (enabled=%s)", settings.reranker_model, settings.reranker_enabled)
     logger.info("   Cache: %d entries max", settings.cache_max_size)
     logger.info("   Batch size: %d", settings.batch_size)
 
     load_model(settings)
+    load_reranker(settings)
 
-    logger.info("✅ Embedding service READY on http://%s:%d", settings.host, settings.port)
+    logger.info("✅ Embedding & Reranker service READY on http://%s:%d", settings.host, settings.port)
     yield
     logger.info("Shutting down embedding service.")
 
 
 app = FastAPI(
-    title="Siksha Saathi Embedding Service",
-    description="Local E5-small embedding service with LRU cache",
-    version="1.0.0",
+    title="Siksha Saathi Embedding & Reranker Service",
+    description="Local E5-small embedding service with Cross-Encoder reranker",
+    version="1.1.0",
     lifespan=lifespan,
 )
 
@@ -91,10 +97,13 @@ async def health():
         return HealthResponse(status="starting")
 
     info = get_model_info()
+    rerank_info = get_reranker_info()
     return HealthResponse(
         status="ready",
         model=info["model_name"],
         dim=info["dim"],
+        reranker_model=rerank_info["model_name"],
+        reranker_ready=rerank_info["ready"],
         uptime_s=info["uptime_s"],
     )
 
@@ -175,6 +184,36 @@ async def embed_batch(req: BatchEmbedRequest):
         dim=settings.model_dim,
         count=len(embeddings),
         latency_ms=round(latency, 2),
+    )
+
+
+@app.post("/rerank", response_model=RerankResponse)
+async def rerank(req: RerankRequest):
+    """
+    Rerank candidate document passages against a query using CrossEncoder.
+
+    Returns the documents sorted by relevance score descending,
+    preserving each document's original index.
+    """
+    global _total_requests
+    _total_requests += 1
+
+    if not is_reranker_ready():
+        raise HTTPException(
+            status_code=503,
+            detail="Reranker model is not ready or disabled",
+        )
+
+    t0 = time.perf_counter()
+    results = rerank_documents(req.query, req.documents, top_k=req.top_k)
+    latency = (time.perf_counter() - t0) * 1000
+
+    info = get_reranker_info()
+    return RerankResponse(
+        results=[RerankItem(**r) for r in results],
+        model=info["model_name"],
+        time_ms=round(latency, 2),
+        count=len(results),
     )
 
 

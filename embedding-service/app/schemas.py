@@ -38,7 +38,30 @@ class HealthResponse(BaseModel):
     status: str  # "starting" | "ready" | "unhealthy"
     model: Optional[str] = None
     dim: Optional[int] = None
+    reranker_model: Optional[str] = None
+    reranker_ready: Optional[bool] = None
     uptime_s: Optional[float] = None
+
+
+class RerankRequest(BaseModel):
+    """Cross-encoder rerank request."""
+    query: str = Field(..., min_length=1, description="Search query")
+    documents: List[str] = Field(..., description="Candidate document passages to rerank")
+    top_k: Optional[int] = Field(default=None, description="Max results to return")
+
+
+class RerankItem(BaseModel):
+    """Individual reranked item."""
+    index: int = Field(..., description="Original index in documents list")
+    score: float = Field(..., description="Cross-encoder relevance score")
+
+
+class RerankResponse(BaseModel):
+    """Cross-encoder rerank response."""
+    results: List[RerankItem]
+    model: str
+    time_ms: float
+    count: int
 
 
 class MetricsResponse(BaseModel):

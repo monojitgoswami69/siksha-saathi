@@ -22,6 +22,12 @@ class Settings(BaseSettings):
     host: str = Field(default="127.0.0.1", alias="EMBEDDING_HOST")
     port: int = Field(default=8100, alias="EMBEDDING_PORT")
 
+    # Cross-Encoder Reranker
+    reranker_model: str = Field(
+        default="cross-encoder/ms-marco-MiniLM-L-6-v2", alias="RERANKER_MODEL"
+    )
+    reranker_enabled: bool = Field(default=True, alias="RERANKER_ENABLED")
+
     model_config = {
         "env_file": [str(Path(__file__).parent.parent / ".env"), ".env"],
         "env_file_encoding": "utf-8",
