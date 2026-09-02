@@ -84,14 +84,29 @@ if [ ! -f ".env.local" ]; then
   fi
 fi
 
+# Detect Operating System for OS-specific fallbacks
+UNAME_OS="$(uname -s 2>/dev/null || echo 'Unknown')"
+case "${UNAME_OS}" in
+  Darwin*)              OS_TYPE="mac" ;;
+  Linux*)               OS_TYPE="linux" ;;
+  MINGW*|MSYS*|CYGWIN*) OS_TYPE="windows" ;;
+  *)                    OS_TYPE="generic" ;;
+esac
+
 # ── 0. Check & Initialize PostgreSQL (Docker or Cloud) ───────────────────
 CURRENT_DB_URL=$(grep "^DATABASE_URL=" .env.local 2>/dev/null | head -n 1 | cut -d '=' -f2- | tr -d '"' | tr -d "'" || echo "")
 if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0.1"* ]]; then
   echo -e "\n${YELLOW}[0/4] Checking Local PostgreSQL (Docker)...${NC}"
   if command -v docker >/dev/null 2>&1; then
     if ! docker info >/dev/null 2>&1; then
-      echo -e "${CYAN}   Starting Docker Desktop...${NC}"
-      open -a Docker 2>/dev/null || true
+      echo -e "${CYAN}   Attempting to start Docker daemon (${OS_TYPE})...${NC}"
+      if [ "$OS_TYPE" = "mac" ]; then
+        open -a Docker 2>/dev/null || true
+      elif [ "$OS_TYPE" = "linux" ]; then
+        systemctl --user start docker 2>/dev/null || sudo systemctl start docker 2>/dev/null || sudo service docker start 2>/dev/null || true
+      elif [ "$OS_TYPE" = "windows" ]; then
+        cmd.exe /c start "" "Docker Desktop" 2>/dev/null || true
+      fi
       echo -e "   Waiting for Docker daemon to initialize..."
       DOCKER_RETRIES=20
       until docker info >/dev/null 2>&1 || [ $DOCKER_RETRIES -eq 0 ]; do
@@ -115,7 +130,8 @@ if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0
 
       echo -e "      Waiting for PostgreSQL on port 5432 to be ready..."
       RETRIES=15
-      until nc -z 127.0.0.1 5432 >/dev/null 2>&1 || [ $RETRIES -eq 0 ]; do
+      # Universal Python socket check (works on macOS, Linux, and Windows without nc/netcat)
+      until python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('127.0.0.1', 5432)); s.close()" 2>/dev/null || [ $RETRIES -eq 0 ]; do
         sleep 1
         RETRIES=$((RETRIES - 1))
       done
@@ -127,7 +143,7 @@ if [[ "$CURRENT_DB_URL" == *"localhost"* ]] || [[ "$CURRENT_DB_URL" == *"127.0.0
       fi
     else
       echo -e "${RED}❌ Docker daemon is not running!${NC}"
-      echo -e "   Please start Docker Desktop to use local PostgreSQL, or switch DATABASE_URL in .env.local to NeonDB."
+      echo -e "   Please start Docker Desktop/daemon to use local PostgreSQL, or switch DATABASE_URL in .env.local to NeonDB."
       exit 1
     fi
   else
@@ -138,22 +154,37 @@ else
   echo -e "\n${CYAN}[0/4] Using Cloud Database:${NC} ${CURRENT_DB_URL%%@*}@... (NeonDB)"
 fi
 
-# Ensure Python virtual environment exists
-if [ ! -f "optimized-worker/.venv/bin/activate" ]; then
+# Ensure Python virtual environment exists (handle macOS/Linux vs Windows path conventions)
+VENV_ACTIVATE=""
+if [ -f "optimized-worker/.venv/bin/activate" ]; then
+  VENV_ACTIVATE="optimized-worker/.venv/bin/activate"
+elif [ -f "optimized-worker/.venv/Scripts/activate" ]; then
+  VENV_ACTIVATE="optimized-worker/.venv/Scripts/activate"
+fi
+
+if [ -z "$VENV_ACTIVATE" ]; then
   echo -e "${CYAN}🔧 Creating Python virtual environment in optimized-worker/.venv...${NC}"
-  python3 -m venv optimized-worker/.venv
-  source optimized-worker/.venv/bin/activate
+  python3 -m venv optimized-worker/.venv || {
+    echo -e "${RED}❌ Failed to create virtualenv. On Ubuntu/Debian, install with: sudo apt install python3-venv python3-pip${NC}"
+    exit 1
+  }
+  if [ -f "optimized-worker/.venv/bin/activate" ]; then
+    VENV_ACTIVATE="optimized-worker/.venv/bin/activate"
+  else
+    VENV_ACTIVATE="optimized-worker/.venv/Scripts/activate"
+  fi
+  source "$VENV_ACTIVATE"
   echo -e "${CYAN}   Installing worker dependencies...${NC}"
   pip install -q -r optimized-worker/requirements.txt
   echo -e "${CYAN}   Installing embedding service dependencies...${NC}"
   pip install -q -r embedding-service/requirements.txt
 else
-  source optimized-worker/.venv/bin/activate
+  source "$VENV_ACTIVATE"
 fi
 
-# Ensure embedding-service has .venv symlink
+# Ensure embedding-service has .venv symlink or folder reference
 if [ ! -L "embedding-service/.venv" ] && [ ! -d "embedding-service/.venv" ]; then
-  ln -sf ../optimized-worker/.venv embedding-service/.venv
+  ln -sf ../optimized-worker/.venv embedding-service/.venv 2>/dev/null || true
 fi
 
 # Ensure node_modules exist
@@ -168,14 +199,18 @@ export LOCAL_EMBEDDING_DIM="384"
 export LOCAL_EMBEDDING_MODEL="intfloat/multilingual-e5-small"
 export RERANKER_MODEL="cross-encoder/ms-marco-MiniLM-L-6-v2"
 
-# Check if port is already bound
-if lsof -Pi :${EMBEDDING_PORT} -sTCP:LISTEN -t >/dev/null 2>&1; then
+# Universal port check via Python socket (replaces macOS-only lsof with zero external dependencies)
+PORT_IN_USE=false
+if python3 -c "import socket; s=socket.socket(); s.settimeout(1); s.connect(('${EMBEDDING_HOST}', ${EMBEDDING_PORT})); s.close()" 2>/dev/null; then
+  PORT_IN_USE=true
+fi
+
+if [ "$PORT_IN_USE" = true ]; then
   ALREADY_RUNNING=$(curl -s "${LOCAL_EMBEDDING_URL}/health" 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('status',''))" 2>/dev/null || echo "")
   if [ "$ALREADY_RUNNING" = "ready" ]; then
     echo -e "${GREEN}ℹ️  Embedding & Reranker service already running & ready on ${LOCAL_EMBEDDING_URL}.${NC}"
   else
-    echo -e "${RED}❌ Port ${EMBEDDING_PORT} is in use by another process. Please free it first:${NC}"
-    echo -e "   lsof -i :${EMBEDDING_PORT}"
+    echo -e "${RED}❌ Port ${EMBEDDING_PORT} is in use by another process. Please free it first.${NC}"
     exit 1
   fi
 else
