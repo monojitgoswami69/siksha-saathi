@@ -148,6 +148,8 @@ export const api = {
     },
     delete: (docId: string) =>
       request(`/documents/${docId}`, { method: 'DELETE' }, 'admin'),
+    update: (docId: string, data: any) =>
+      request(`/documents/${docId}`, { method: 'PATCH', body: JSON.stringify(data) }, 'admin'),
     getPreviewUrl: (docId: string): Promise<{ preview_url: string; title: string }> =>
       request(`/documents/${docId}/preview`, { method: 'GET' }),
     getDownloadUrl: (docId: string): Promise<{ download_url: string; title: string }> =>

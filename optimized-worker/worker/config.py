@@ -39,8 +39,8 @@ class Settings(BaseSettings):
     ocr_max_pages: int = Field(default=50, alias="OCR_MAX_PAGES")
 
     # Chunking
-    chunk_size: int = Field(default=500, alias="CHUNK_SIZE")
-    chunk_overlap: int = Field(default=50, alias="CHUNK_OVERLAP")
+    chunk_size: int = Field(default=800, alias="CHUNK_SIZE")
+    chunk_overlap: int = Field(default=100, alias="CHUNK_OVERLAP")
 
     # Worker
     poll_interval_ms: int = Field(default=5000, alias="POLL_INTERVAL_MS")

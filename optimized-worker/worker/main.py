@@ -22,8 +22,8 @@ from typing import Optional
 # Load .env from worker folder or parent
 from dotenv import load_dotenv
 
+load_dotenv(Path(__file__).parent.parent.parent / ".env.local", override=True)
 load_dotenv(Path(__file__).parent.parent / ".env")
-load_dotenv(Path(__file__).parent.parent.parent / ".env.local")
 
 from .config import get_settings
 from .db import query, execute, transaction, close_pool
@@ -106,8 +106,8 @@ async def log_audit(**kwargs) -> None:
 
 async def process_job(job: dict) -> dict:
     """Process a single ingestion job. Returns timing metadata."""
-    doc_id = job["document_id"]
-    job_id = job["id"]
+    doc_id = str(job["document_id"])
+    job_id = str(job["id"])
     attempts = job["attempts"]
     max_attempts = job["max_attempts"]
     timings = {"job_id": job_id, "document_id": doc_id}
@@ -190,45 +190,9 @@ async def process_job(job: dict) -> dict:
             batch_chunks = chunks[i : i + batch_size]
             batch_embs = embeddings[i : i + batch_size]
 
-            # Build parameterized INSERT
-            placeholders = []
-            params = []
-            for j, (chunk, emb) in enumerate(zip(batch_chunks, batch_embs)):
-                base = j * 18 + 1
-                placeholders.append(
-                    f"(${','.join(f'${base+k}' for k in range(18))})"
-                        .replace("($", "(")
-                        .replace(",", ", ")
-                )
-                # Use simple %s placeholders for psycopg
-                vec_str = format_vector(emb)
-                params.extend([
-                    doc_id, chunk.chunk_index, chunk.total_chunks, chunk.raw_content,
-                    chunk.page_start, chunk.page_end, chunk.paragraph_id,
-                    chunk.chunk_type, chunk.char_start, chunk.char_end,
-                    chunk.file_name, chunk.title, chunk.stream, chunk.semester,
-                    chunk.section, chunk.subject, chunk.module, vec_str,
-                ])
-
-            # Build VALUES clause with %s placeholders
-            values_parts = []
-            for j in range(len(batch_chunks)):
-                cols = ", ".join(["%s"] * 18)
-                values_parts.append(f"({cols})")
-
-            # Replace last %s with ::vector cast
-            sql = f"""
-                INSERT INTO document_chunks (
-                    document_id, chunk_index, total_chunks, raw_content,
-                    page_start, page_end, paragraph_id, chunk_type, char_start, char_end,
-                    file_name, title, stream, semester, section, subject, module, embedding
-                ) VALUES {', '.join(values_parts)};
-            """
-            # Replace the last %s in each value group with %s::vector
-            # We need to replace every 18th %s with %s::vector
-            # Simpler: just do the insert row by row for correctness
             for j, (chunk, emb) in enumerate(zip(batch_chunks, batch_embs)):
                 vec_str = format_vector(emb)
+                clean_text = (chunk.raw_content or "").replace("\x00", "")
                 await execute(
                     """INSERT INTO document_chunks (
                         document_id, chunk_index, total_chunks, raw_content,
@@ -236,7 +200,7 @@ async def process_job(job: dict) -> dict:
                         file_name, title, stream, semester, section, subject, module, embedding_local
                     ) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s::vector(384));""",
                     (
-                        doc_id, chunk.chunk_index, chunk.total_chunks, chunk.raw_content,
+                        doc_id, chunk.chunk_index, chunk.total_chunks, clean_text,
                         chunk.page_start, chunk.page_end, chunk.paragraph_id,
                         chunk.chunk_type, chunk.char_start, chunk.char_end,
                         chunk.file_name, chunk.title, chunk.stream, chunk.semester,

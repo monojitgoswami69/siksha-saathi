@@ -117,9 +117,19 @@ export async function uploadStorageFile({
       size: dropboxRes.size,
     };
   } catch (dbxErr) {
-    // If both are mock / unconfigured in local dev
+    // If both are mock / unconfigured in local dev, persist to local disk (.storage)
+    try {
+      const fs = await import('fs');
+      const path = await import('path');
+      const localPath = path.join(process.cwd(), '.storage', fileKey);
+      fs.mkdirSync(path.dirname(localPath), { recursive: true });
+      fs.writeFileSync(localPath, buffer);
+    } catch (e: any) {
+      console.warn('Could not write local storage file:', e.message);
+    }
+
     return {
-      provider: 'r2',
+      provider: 'local' as any,
       fileKey,
       publicUrl: null,
       size: buffer.length,

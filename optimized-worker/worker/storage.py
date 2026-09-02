@@ -66,4 +66,14 @@ async def download_file(file_key: str, provider: str = "r2") -> Optional[bytes]:
         except Exception as e:
             logger.error("Dropbox download error: %s", e)
 
+    # Local filesystem fallback (.storage/)
+    from pathlib import Path
+    for base in [Path.cwd(), Path.cwd().parent, Path(__file__).parent.parent.parent]:
+        candidate = base / ".storage" / file_key
+        if candidate.exists() and candidate.is_file():
+            try:
+                return candidate.read_bytes()
+            except Exception as e:
+                logger.error("Error reading local storage file %s: %s", candidate, e)
+
     return None

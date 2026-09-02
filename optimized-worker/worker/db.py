@@ -24,24 +24,33 @@ async def get_pool() -> AsyncConnectionPool:
     if _pool is None:
         settings = get_settings()
         conninfo = settings.database_url
-        # Fix SSL: Neon's verify-full requires local root.crt; use require instead
-        conninfo = conninfo.replace("sslmode=verify-full", "sslmode=require")
-        conninfo = conninfo.replace("channel_binding=require", "")
-        while "&&" in conninfo:
-            conninfo = conninfo.replace("&&", "&")
-        conninfo = conninfo.rstrip("&").rstrip("?")
-        if "neon.tech" in conninfo and "sslmode" not in conninfo:
-            sep = "&" if "?" in conninfo else "?"
-            conninfo += f"{sep}sslmode=require"
+        # Handle local vs cloud SSL
+        if "localhost" in conninfo or "127.0.0.1" in conninfo:
+            conninfo = conninfo.replace("sslmode=verify-full", "sslmode=disable")
+            conninfo = conninfo.replace("sslmode=require", "sslmode=disable")
+            conninfo = conninfo.replace("channel_binding=require", "")
+            if "sslmode" not in conninfo:
+                sep = "&" if "?" in conninfo else "?"
+                conninfo += f"{sep}sslmode=disable"
+        else:
+            # Fix SSL: Neon's verify-full requires local root.crt; use require instead
+            conninfo = conninfo.replace("sslmode=verify-full", "sslmode=require")
+            conninfo = conninfo.replace("channel_binding=require", "")
+            while "&&" in conninfo:
+                conninfo = conninfo.replace("&&", "&")
+            conninfo = conninfo.rstrip("&").rstrip("?")
+            if "neon.tech" in conninfo and "sslmode" not in conninfo:
+                sep = "&" if "?" in conninfo else "?"
+                conninfo += f"{sep}sslmode=require"
         _pool = AsyncConnectionPool(
             conninfo=conninfo,
             min_size=1,
             max_size=5,
             open=False,
-            kwargs={"row_factory": dict_row},
+            kwargs={"row_factory": dict_row, "autocommit": True},
         )
         await _pool.open()
-        logger.info("✅ PostgreSQL connection pool opened")
+        logger.info("✅ PostgreSQL connection pool opened (autocommit=True)")
     return _pool
 
 
