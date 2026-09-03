@@ -104,14 +104,14 @@ export default function LoginPage() {
 
   if (isLoading) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-white font-body">
+      <div className="min-h-screen flex items-center justify-center bg-white font-body" suppressHydrationWarning>
         <div className="w-8 h-8 border-3 border-slate-200 border-t-[#0d47a1] rounded-full animate-spin"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex flex-col md:flex-row bg-white relative font-body text-slate-800">
+    <div className="min-h-screen flex flex-col md:flex-row bg-white relative font-body text-slate-800" suppressHydrationWarning>
       {/* Top Navbar */}
       <nav className="absolute top-0 left-0 w-full flex justify-between items-center p-4 px-6 md:px-10 z-50">
         <div className="flex items-center gap-2 text-slate-600 transition-colors">

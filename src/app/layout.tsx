@@ -16,7 +16,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en" className="h-full">
+    <html lang="en" className="h-full" suppressHydrationWarning>
       <head>
         <link rel="preconnect" href="https://fonts.googleapis.com" />
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
@@ -30,7 +30,7 @@ export default function RootLayout({
         />
         <script src="https://accounts.google.com/gsi/client" async defer></script>
       </head>
-      <body className="h-full antialiased font-sans bg-slate-50 text-slate-900 selection:bg-indigo-500 selection:text-white">
+      <body className="h-full antialiased font-sans bg-slate-50 text-slate-900 selection:bg-indigo-500 selection:text-white" suppressHydrationWarning>
         <ToastProvider>
           <StudentAuthProvider>
             <AdminAuthProvider>
